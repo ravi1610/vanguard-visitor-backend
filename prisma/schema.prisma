@@ -1,0 +1,607 @@
+// Visitor Management - Multi-tenant schema
+// PostgreSQL with tenant_id-based multitenancy
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users           User[]
+  roles           Role[]
+  visitors        Visitor[]
+  visits          Visit[]
+  staff           Staff[]
+  vehicles        Vehicle[]
+  spaces          Space[]
+  spaceAssignments SpaceAssignment[]
+  maintenance     Maintenance[]
+  projects        Project[]
+  calendarEvents  CalendarEvent[]
+  documents       Document[]
+  complianceItems    ComplianceItem[]
+  vendors            Vendor[]
+  tasks              Task[]
+  emergencyContacts  EmergencyContact[]
+  pets               Pet[]
+  violations         Violation[]
+  packages           Package[]
+
+  @@map("tenants")
+}
+
+// Community/building resident role or occupancy type
+enum ResidentType {
+  president
+  vice_president
+  treasurer
+  owner
+  renter
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  email        String
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Resident-specific (optional): president, vice_president, treasurer, owner, renter
+  residentType                 ResidentType? @map("resident_type")
+  movingDate                   DateTime? @map("moving_date")
+  isHandicapped                Boolean?  @map("is_handicapped")
+  isBoardMember                Boolean?  @map("is_board_member")
+  optInElectronicCommunications Boolean?  @map("opt_in_electronic_communications")
+  otherContactInfo             String?   @map("other_contact_info")
+  workInfo                     String?   @map("work_info")
+  note                         String?   @map("note")
+  photoUrl                     String?   @map("photo_url")
+  unit                         String?   @map("unit")
+  phone                        String?   @map("phone")
+  mobile                       String?   @map("mobile")
+  dateOfBirth                  DateTime? @map("date_of_birth")
+  leaseBeginDate               DateTime? @map("lease_begin_date")
+  leaseEndDate                 DateTime? @map("lease_end_date")
+
+  tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles            UserRole[]
+  refreshTokens        RefreshToken[]
+  hostedVisits         Visit[]        @relation("HostUser")
+  maintenanceAssigned  Maintenance[]
+  tasksAssigned        Task[]
+  documentsUploaded    Document[]
+  emergencyContacts    EmergencyContact[]
+  pets                 Pet[]
+  violations           Violation[]
+  packagesReceived     Package[]  @relation("packageRecipient")
+  packagesLoggedBy     Package[]  @relation("packageReceivedBy")
+  packagesPickedUpBy   Package[]  @relation("packagePickedUpBy")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  tenantId    String?  @map("tenant_id") // null = global/default roles
+  name        String
+  key         String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  userRoles      UserRole[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Visitor {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  email      String?
+  phone      String?
+  company    String?
+  documentId String?  @map("document_id")
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  visits Visit[]
+
+  @@index([tenantId])
+  @@index([tenantId, documentId])
+  @@map("visitors")
+}
+
+enum VisitStatus {
+  scheduled
+  checked_in
+  checked_out
+  no_show
+}
+
+model Visit {
+  id             String     @id @default(uuid())
+  tenantId       String     @map("tenant_id")
+  visitorId      String     @map("visitor_id")
+  hostUserId     String     @map("host_user_id")
+  purpose        String?
+  location       String?
+  scheduledStart DateTime?  @map("scheduled_start")
+  scheduledEnd   DateTime?  @map("scheduled_end")
+  checkInAt      DateTime?  @map("check_in_at")
+  checkOutAt     DateTime?  @map("check_out_at")
+  status         VisitStatus @default(scheduled)
+  qrCode         String?    @map("qr_code")
+  qrToken        String?    @map("qr_token")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  hostUser User   @relation("HostUser", fields: [hostUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("visits")
+}
+
+model Staff {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  email     String?
+  phone     String?
+  department String?
+  role      String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("staff")
+}
+
+enum VehicleOwnerType {
+  visitor
+  staff
+  resident
+  other
+}
+
+model Vehicle {
+  id          String         @id @default(uuid())
+  tenantId    String         @map("tenant_id")
+  plateNumber String         @map("plate_number")
+  make        String?
+  model       String?
+  ownerType   VehicleOwnerType @default(other) @map("owner_type")
+  ownerId     String?        @map("owner_id")
+  photoUrl    String?        @map("photo_url")
+  notes       String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("vehicles")
+}
+
+enum SpaceType {
+  parking
+  desk
+  other
+}
+
+model Space {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  type      SpaceType @default(parking)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments SpaceAssignment[]
+
+  @@index([tenantId])
+  @@map("spaces")
+}
+
+model SpaceAssignment {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  spaceId      String   @map("space_id")
+  assigneeType String   @map("assignee_type")
+  assigneeId   String   @map("assignee_id")
+  fromDate     DateTime @map("from_date")
+  toDate       DateTime @map("to_date")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  space  Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([spaceId])
+  @@map("space_assignments")
+}
+
+enum MaintenanceStatus {
+  open
+  in_progress
+  completed
+  cancelled
+}
+
+model Maintenance {
+  id               String            @id @default(uuid())
+  tenantId         String            @map("tenant_id")
+  title            String
+  description      String?
+  status           MaintenanceStatus @default(open)
+  assignedToUserId String?           @map("assigned_to_user_id")
+  propertyUnit     String?           @map("property_unit")
+  dueDate          DateTime?        @map("due_date")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo User?  @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("maintenance")
+}
+
+enum ProjectStatus {
+  active
+  completed
+  on_hold
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  tenantId    String        @map("tenant_id")
+  name        String
+  description String?
+  status      ProjectStatus @default(active)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tasks  Task[]
+
+  @@index([tenantId])
+  @@map("projects")
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+}
+
+model Task {
+  id               String     @id @default(uuid())
+  tenantId         String     @map("tenant_id")
+  projectId        String     @map("project_id")
+  title            String
+  status           TaskStatus @default(todo)
+  dueDate          DateTime?  @map("due_date")
+  assignedToUserId String?    @map("assigned_to_user_id")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTo User?   @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([projectId])
+  @@map("tasks")
+}
+
+model CalendarEvent {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  title       String
+  startAt     DateTime @map("start_at")
+  endAt       DateTime @map("end_at")
+  type        String?
+  location    String?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("calendar_events")
+}
+
+model Document {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  name             String
+  documentType     String?  @map("document_type")
+  category         String?
+  fileUrl          String?  @map("file_url")
+  uploadedByUserId String?  @map("uploaded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  uploadedBy User?  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("documents")
+}
+
+enum ComplianceStatus {
+  pending
+  completed
+  overdue
+}
+
+model ComplianceItem {
+  id        String           @id @default(uuid())
+  tenantId  String           @map("tenant_id")
+  name      String
+  dueDate   DateTime         @map("due_date")
+  status    ComplianceStatus @default(pending)
+  category  String?
+  notes     String?
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("compliance_items")
+}
+
+model Vendor {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  contactName String?  @map("contact_name")
+  email       String?
+  phone       String?
+  category    String?
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("vendors")
+}
+
+// ── Emergency Contacts, Pets, Violations ──────────────────────────
+
+enum Relationship {
+  spouse
+  parent
+  sibling
+  child
+  friend
+  neighbor
+  other
+}
+
+enum PetSpecies {
+  dog
+  cat
+  bird
+  fish
+  reptile
+  other
+}
+
+enum ViolationType {
+  noise
+  parking
+  property_damage
+  unauthorized_modification
+  pet_violation
+  trash
+  other
+}
+
+enum ViolationStatus {
+  open
+  under_review
+  resolved
+  dismissed
+}
+
+model EmergencyContact {
+  id           String       @id @default(uuid())
+  tenantId     String       @map("tenant_id")
+  userId       String       @map("user_id")
+  name         String
+  relationship Relationship @default(other)
+  phone        String
+  email        String?
+  isPrimary    Boolean      @default(false) @map("is_primary")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("emergency_contacts")
+}
+
+model Pet {
+  id                 String     @id @default(uuid())
+  tenantId           String     @map("tenant_id")
+  userId             String     @map("user_id")
+  name               String
+  species            PetSpecies @default(other)
+  breed              String?
+  color              String?
+  weight             Float?
+  registrationNumber String?    @map("registration_number")
+  isServiceAnimal    Boolean    @default(false) @map("is_service_animal")
+  notes              String?
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("pets")
+}
+
+model Violation {
+  id           String          @id @default(uuid())
+  tenantId     String          @map("tenant_id")
+  userId       String          @map("user_id")
+  title        String
+  description  String?
+  type         ViolationType   @default(other)
+  status       ViolationStatus @default(open)
+  fineAmount   Float?          @map("fine_amount")
+  issuedDate   DateTime        @map("issued_date")
+  resolvedDate DateTime?       @map("resolved_date")
+  notes        String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([userId])
+  @@map("violations")
+}
+
+// ── Package Tracking ──────────────────────────────────────────────
+
+enum PackageStatus {
+  received
+  notified
+  picked_up
+  returned
+}
+
+enum PackageSize {
+  small
+  medium
+  large
+  oversized
+}
+
+model Package {
+  id              String        @id @default(uuid())
+  tenantId        String        @map("tenant_id")
+  trackingNumber  String?       @map("tracking_number")
+  carrier         String?
+  status          PackageStatus @default(received)
+  size            PackageSize   @default(medium)
+  recipientId     String?       @map("recipient_id")
+  recipientName   String        @map("recipient_name")
+  unit            String?
+  description     String?
+  storageLocation String?       @map("storage_location")
+  isPerishable    Boolean       @default(false) @map("is_perishable")
+  receivedAt      DateTime      @default(now()) @map("received_at")
+  receivedById    String?       @map("received_by_id")
+  pickedUpAt      DateTime?     @map("picked_up_at")
+  pickedUpById    String?       @map("picked_up_by_id")
+  photoUrl        String?       @map("photo_url")
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipient  User?  @relation("packageRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+  receivedBy User?  @relation("packageReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
+  pickedUpBy User?  @relation("packagePickedUpBy", fields: [pickedUpById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([recipientId])
+  @@map("packages")
+}
