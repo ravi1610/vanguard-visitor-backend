@@ -4,7 +4,9 @@ import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 
-const STAFF_SORT_FIELDS = ['firstName', 'lastName', 'email', 'department', 'createdAt'] as const;
+const STAFF_SORT_FIELDS = [
+  'firstName', 'lastName', 'email', 'department', 'position', 'hireDate', 'createdAt',
+] as const;
 
 @Injectable()
 export class StaffService {
@@ -20,6 +22,13 @@ export class StaffService {
         phone: dto.phone,
         department: dto.department,
         role: dto.role,
+        employeeId: dto.employeeId,
+        position: dto.position,
+        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+        hireDate: dto.hireDate ? new Date(dto.hireDate) : undefined,
+        assignedBuilding: dto.assignedBuilding,
+        address: dto.address,
+        notes: dto.notes,
         isActive: dto.isActive ?? true,
       },
     });
@@ -35,6 +44,9 @@ export class StaffService {
         { lastName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { department: { contains: search, mode: 'insensitive' } },
+        { position: { contains: search, mode: 'insensitive' } },
+        { employeeId: { contains: search, mode: 'insensitive' } },
+        { assignedBuilding: { contains: search, mode: 'insensitive' } },
       ];
     }
     const page = query.page ?? 1;
@@ -73,8 +85,23 @@ export class StaffService {
         ...(dto.phone !== undefined && { phone: dto.phone }),
         ...(dto.department !== undefined && { department: dto.department }),
         ...(dto.role !== undefined && { role: dto.role }),
+        ...(dto.employeeId !== undefined && { employeeId: dto.employeeId }),
+        ...(dto.position !== undefined && { position: dto.position }),
+        ...(dto.dateOfBirth !== undefined && { dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null }),
+        ...(dto.hireDate !== undefined && { hireDate: dto.hireDate ? new Date(dto.hireDate) : null }),
+        ...(dto.assignedBuilding !== undefined && { assignedBuilding: dto.assignedBuilding }),
+        ...(dto.address !== undefined && { address: dto.address }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
         ...(dto.isActive != null && { isActive: dto.isActive }),
       },
+    });
+  }
+
+  async updatePhoto(tenantId: string, id: string, photoUrl: string) {
+    await this.findOne(tenantId, id);
+    return this.prisma.staff.update({
+      where: { id },
+      data: { photoUrl },
     });
   }
 

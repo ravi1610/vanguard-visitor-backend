@@ -215,17 +215,25 @@ model Visit {
 }
 
 model Staff {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  firstName String   @map("first_name")
-  lastName  String   @map("last_name")
-  email     String?
-  phone     String?
-  department String?
-  role      String?
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  firstName        String    @map("first_name")
+  lastName         String    @map("last_name")
+  email            String?
+  phone            String?
+  department       String?
+  role             String?
+  photoUrl         String?   @map("photo_url")
+  employeeId       String?   @map("employee_id")
+  position         String?
+  dateOfBirth      DateTime? @map("date_of_birth")
+  hireDate         DateTime? @map("hire_date")
+  assignedBuilding String?   @map("assigned_building")
+  address          String?
+  notes            String?
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
