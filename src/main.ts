@@ -60,6 +60,12 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+  console.log(`🚀 Application is running on: http://localhost:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('❌ Error starting application:', err);
+  process.exit(1);
+});
