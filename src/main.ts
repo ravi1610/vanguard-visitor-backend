@@ -13,7 +13,7 @@ async function bootstrap() {
   app.enableCors({ origin: true, credentials: true });
 
   // Serve uploaded files
-  app.useStaticAssets(join(__dirname, '..', '..', 'uploads'), { prefix: '/uploads/' });
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' });
 
   const config = new DocumentBuilder()
     .setTitle('Vanguard Visitor API')
