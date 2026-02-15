@@ -57,6 +57,7 @@ export class ReportsService {
       totalDocuments,
       totalVendors,
       pendingPackages,
+      activeBolos,
     ] = await Promise.all([
       this.prisma.visitor.count({ where: { tenantId } }),
       this.prisma.visit.count({ where: { tenantId } }),
@@ -71,6 +72,7 @@ export class ReportsService {
       this.prisma.document.count({ where: { tenantId } }),
       this.prisma.vendor.count({ where: { tenantId } }),
       this.prisma.package.count({ where: { tenantId, status: { in: ['received', 'notified'] } } }),
+      this.prisma.bolo.count({ where: { tenantId, status: 'active' } }),
     ]);
     return {
       totalVisitors,
@@ -86,6 +88,7 @@ export class ReportsService {
       totalDocuments,
       totalVendors,
       pendingPackages,
+      activeBolos,
     };
   }
 

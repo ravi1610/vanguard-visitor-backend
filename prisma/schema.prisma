@@ -36,6 +36,7 @@ model Tenant {
   pets               Pet[]
   violations         Violation[]
   packages           Package[]
+  bolos              Bolo[]
 
   @@map("tenants")
 }
@@ -90,6 +91,8 @@ model User {
   packagesReceived     Package[]  @relation("packageRecipient")
   packagesLoggedBy     Package[]  @relation("packageReceivedBy")
   packagesPickedUpBy   Package[]  @relation("packagePickedUpBy")
+  bolosCreated         Bolo[]     @relation("boloCreatedBy")
+  bolosResolved        Bolo[]     @relation("boloResolvedBy")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -612,4 +615,49 @@ model Package {
   @@index([tenantId, status])
   @@index([recipientId])
   @@map("packages")
+}
+
+// ── BOLO (Be On the Lookout) Alerts ─────────────────────────────
+
+enum BoloStatus {
+  active
+  resolved
+  expired
+}
+
+enum BoloPriority {
+  low
+  medium
+  high
+  critical
+}
+
+model Bolo {
+  id                 String       @id @default(uuid())
+  tenantId           String       @map("tenant_id")
+  personName         String       @map("person_name")
+  description        String?
+  vehicleMake        String?      @map("vehicle_make")
+  vehicleModel       String?      @map("vehicle_model")
+  vehicleColor       String?      @map("vehicle_color")
+  vehicleDescription String?      @map("vehicle_description")
+  licensePlate       String?      @map("license_plate")
+  photoUrl           String?      @map("photo_url")
+  notes              String?
+  status             BoloStatus   @default(active)
+  priority           BoloPriority @default(medium)
+  createdById        String?      @map("created_by_id")
+  resolvedById       String?      @map("resolved_by_id")
+  resolvedDate       DateTime?    @map("resolved_date")
+  expiresAt          DateTime?    @map("expires_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy  User?  @relation("boloCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy User?  @relation("boloResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("bolos")
 }

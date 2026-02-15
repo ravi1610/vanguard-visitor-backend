@@ -12,6 +12,9 @@ async function bootstrap() {
   );
   app.enableCors({ origin: true, credentials: true });
 
+  // Global API prefix — all routes become /api/*
+  app.setGlobalPrefix('api', { exclude: [] });
+
   // Serve uploaded files
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' });
 
@@ -46,6 +49,7 @@ async function bootstrap() {
     .addTag('Compliance', 'Compliance tracking')
     .addTag('Vendors', 'Vendor / contractor management')
     .addTag('Reports', 'Reporting and analytics')
+    .addTag('BOLOs', 'Be On the Lookout alerts management')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

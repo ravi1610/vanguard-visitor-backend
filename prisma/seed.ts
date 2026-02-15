@@ -45,6 +45,8 @@ async function main() {
     'violations.manage',
     'packages.view',
     'packages.manage',
+    'bolos.view',
+    'bolos.manage',
   ];
 
   for (const key of permissions) {
