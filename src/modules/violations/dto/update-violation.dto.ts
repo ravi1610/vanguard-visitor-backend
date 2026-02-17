@@ -4,6 +4,10 @@ import { ViolationType, ViolationStatus } from '@prisma/client';
 export class UpdateViolationDto {
   @IsOptional()
   @IsString()
+  unitId?: string;
+
+  @IsOptional()
+  @IsString()
   @MinLength(1)
   title?: string;
 

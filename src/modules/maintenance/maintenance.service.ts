@@ -18,7 +18,7 @@ export class MaintenanceService {
         description: dto.description,
         status: dto.status ?? 'open',
         assignedToUserId: dto.assignedToUserId,
-        propertyUnit: dto.propertyUnit,
+        unitId: dto.unitId,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       },
       include: {
@@ -48,7 +48,7 @@ export class MaintenanceService {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
-        { propertyUnit: { contains: search, mode: 'insensitive' } },
+        { unit: { unitNumber: { contains: search, mode: 'insensitive' } } },
       ];
     }
     const page = query.page ?? 1;
@@ -66,6 +66,7 @@ export class MaintenanceService {
           assignedTo: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
+          unit: { select: { id: true, unitNumber: true, building: true } },
         },
       }),
       this.prisma.maintenance.count({ where }),
@@ -80,6 +81,7 @@ export class MaintenanceService {
         assignedTo: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
+        unit: { select: { id: true, unitNumber: true, building: true } },
       },
     });
     if (!m) throw new NotFoundException('Maintenance not found');
@@ -97,8 +99,8 @@ export class MaintenanceService {
         ...(dto.assignedToUserId !== undefined && {
           assignedToUserId: dto.assignedToUserId,
         }),
-        ...(dto.propertyUnit !== undefined && {
-          propertyUnit: dto.propertyUnit,
+        ...(dto.unitId !== undefined && {
+          unitId: dto.unitId || null,
         }),
         ...(dto.dueDate !== undefined && {
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null,

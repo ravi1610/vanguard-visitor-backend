@@ -24,7 +24,7 @@ export class CreatePackageDto {
 
   @IsOptional()
   @IsString()
-  unit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

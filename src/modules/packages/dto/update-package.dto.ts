@@ -29,7 +29,7 @@ export class UpdatePackageDto {
 
   @IsOptional()
   @IsString()
-  unit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

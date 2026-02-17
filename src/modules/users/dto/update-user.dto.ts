@@ -62,7 +62,7 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  unit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

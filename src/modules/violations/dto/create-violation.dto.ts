@@ -6,6 +6,10 @@ export class CreateViolationDto {
   @MinLength(1)
   userId: string;
 
+  @IsOptional()
+  @IsString()
+  unitId?: string;
+
   @IsString()
   @MinLength(1)
   title: string;

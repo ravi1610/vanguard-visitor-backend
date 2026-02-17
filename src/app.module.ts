@@ -25,6 +25,8 @@ import { PetsModule } from './modules/pets/pets.module';
 import { ViolationsModule } from './modules/violations/violations.module';
 import { PackagesModule } from './modules/packages/packages.module';
 import { BolosModule } from './modules/bolos/bolos.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { UnitsModule } from './modules/units/units.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import configuration from './config/configuration';
 
@@ -53,6 +55,8 @@ import configuration from './config/configuration';
     ViolationsModule,
     PackagesModule,
     BolosModule,
+    TasksModule,
+    UnitsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: JwtAuthGuard }],

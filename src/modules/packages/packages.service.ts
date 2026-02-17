@@ -14,9 +14,10 @@ const PACKAGE_SORT_FIELDS = [
 ] as const;
 
 const PACKAGE_INCLUDE = {
-  recipient: { select: { id: true, firstName: true, lastName: true, email: true, unit: true } },
+  recipient: { select: { id: true, firstName: true, lastName: true, email: true } },
   receivedBy: { select: { id: true, firstName: true, lastName: true } },
   pickedUpBy: { select: { id: true, firstName: true, lastName: true } },
+  unit: { select: { id: true, unitNumber: true, building: true } },
 };
 
 @Injectable()
@@ -32,7 +33,7 @@ export class PackagesService {
         size: dto.size,
         recipientId: dto.recipientId,
         recipientName: dto.recipientName,
-        unit: dto.unit,
+        unitId: dto.unitId,
         description: dto.description,
         storageLocation: dto.storageLocation,
         isPerishable: dto.isPerishable ?? false,
@@ -53,7 +54,7 @@ export class PackagesService {
         { trackingNumber: { contains: search, mode: 'insensitive' } },
         { recipientName: { contains: search, mode: 'insensitive' } },
         { carrier: { contains: search, mode: 'insensitive' } },
-        { unit: { contains: search, mode: 'insensitive' } },
+        { unit: { unitNumber: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -101,7 +102,7 @@ export class PackagesService {
         ...(dto.size !== undefined && { size: dto.size }),
         ...(dto.recipientId !== undefined && { recipientId: dto.recipientId }),
         ...(dto.recipientName !== undefined && { recipientName: dto.recipientName }),
-        ...(dto.unit !== undefined && { unit: dto.unit }),
+        ...(dto.unitId !== undefined && { unitId: dto.unitId || null }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.storageLocation !== undefined && { storageLocation: dto.storageLocation }),
         ...(dto.isPerishable !== undefined && { isPerishable: dto.isPerishable }),

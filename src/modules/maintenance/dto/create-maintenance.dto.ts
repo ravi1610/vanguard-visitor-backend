@@ -20,7 +20,7 @@ export class CreateMaintenanceDto {
 
   @IsOptional()
   @IsString()
-  propertyUnit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

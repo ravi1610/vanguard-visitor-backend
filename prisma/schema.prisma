@@ -37,8 +37,41 @@ model Tenant {
   violations         Violation[]
   packages           Package[]
   bolos              Bolo[]
+  units              Unit[]
 
   @@map("tenants")
+}
+
+// ── Unit (apartment/condo unit) ──────────────────────────────────
+
+enum UnitStatus {
+  occupied
+  vacant
+  maintenance
+}
+
+model Unit {
+  id         String     @id @default(uuid())
+  tenantId   String     @map("tenant_id")
+  unitNumber String     @map("unit_number")
+  building   String?
+  floor      String?
+  unitType   String?    @map("unit_type")
+  status     UnitStatus @default(vacant)
+  notes      String?
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  residents   User[]
+  vehicles    Vehicle[]
+  packages    Package[]
+  maintenance Maintenance[]
+  violations  Violation[]
+
+  @@unique([tenantId, unitNumber])
+  @@index([tenantId])
+  @@map("units")
 }
 
 // Community/building resident role or occupancy type
@@ -71,7 +104,7 @@ model User {
   workInfo                     String?   @map("work_info")
   note                         String?   @map("note")
   photoUrl                     String?   @map("photo_url")
-  unit                         String?   @map("unit")
+  unitId                       String?   @map("unit_id")
   phone                        String?   @map("phone")
   mobile                       String?   @map("mobile")
   dateOfBirth                  DateTime? @map("date_of_birth")
@@ -79,6 +112,7 @@ model User {
   leaseEndDate                 DateTime? @map("lease_end_date")
 
   tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                 Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
   userRoles            UserRole[]
   refreshTokens        RefreshToken[]
   hostedVisits         Visit[]        @relation("HostUser")
@@ -252,19 +286,29 @@ enum VehicleOwnerType {
 }
 
 model Vehicle {
-  id          String         @id @default(uuid())
-  tenantId    String         @map("tenant_id")
-  plateNumber String         @map("plate_number")
-  make        String?
-  model       String?
-  ownerType   VehicleOwnerType @default(other) @map("owner_type")
-  ownerId     String?        @map("owner_id")
-  photoUrl    String?        @map("photo_url")
-  notes       String?
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id            String           @id @default(uuid())
+  tenantId      String           @map("tenant_id")
+  plateNumber   String           @map("plate_number")
+  make          String?
+  model         String?
+  color         String?
+  year          Int?
+  ownerType     VehicleOwnerType @default(other) @map("owner_type")
+  ownerId       String?          @map("owner_id")
+  unitId        String?          @map("unit_id")
+  tagId         String?          @map("tag_id")
+  stickerNumber String?          @map("sticker_number")
+  parkingSpace  String?          @map("parking_space")
+  isRestricted  Boolean          @default(false) @map("is_restricted")
+  isPrimary     Boolean          @default(true) @map("is_primary")
+  expiresAt     DateTime?        @map("expires_at")
+  photoUrl      String?          @map("photo_url")
+  notes         String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit   Unit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@map("vehicles")
@@ -324,13 +368,14 @@ model Maintenance {
   description      String?
   status           MaintenanceStatus @default(open)
   assignedToUserId String?           @map("assigned_to_user_id")
-  propertyUnit     String?           @map("property_unit")
+  unitId           String?           @map("unit_id")
   dueDate          DateTime?        @map("due_date")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedTo User?  @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  unit       Unit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -548,6 +593,7 @@ model Violation {
   id           String          @id @default(uuid())
   tenantId     String          @map("tenant_id")
   userId       String          @map("user_id")
+  unitId       String?         @map("unit_id")
   title        String
   description  String?
   type         ViolationType   @default(other)
@@ -561,6 +607,7 @@ model Violation {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit   Unit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -593,7 +640,7 @@ model Package {
   size            PackageSize   @default(medium)
   recipientId     String?       @map("recipient_id")
   recipientName   String        @map("recipient_name")
-  unit            String?
+  unitId          String?       @map("unit_id")
   description     String?
   storageLocation String?       @map("storage_location")
   isPerishable    Boolean       @default(false) @map("is_perishable")
@@ -610,6 +657,7 @@ model Package {
   recipient  User?  @relation("packageRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
   receivedBy User?  @relation("packageReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
   pickedUpBy User?  @relation("packagePickedUpBy", fields: [pickedUpById], references: [id], onDelete: SetNull)
+  unit       Unit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([tenantId, status])

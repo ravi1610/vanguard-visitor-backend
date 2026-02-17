@@ -58,6 +58,11 @@ export class ReportsService {
       totalVendors,
       pendingPackages,
       activeBolos,
+      openViolations,
+      pendingTasks,
+      totalUnits,
+      occupiedUnits,
+      vacantUnits,
     ] = await Promise.all([
       this.prisma.visitor.count({ where: { tenantId } }),
       this.prisma.visit.count({ where: { tenantId } }),
@@ -73,6 +78,11 @@ export class ReportsService {
       this.prisma.vendor.count({ where: { tenantId } }),
       this.prisma.package.count({ where: { tenantId, status: { in: ['received', 'notified'] } } }),
       this.prisma.bolo.count({ where: { tenantId, status: 'active' } }),
+      this.prisma.violation.count({ where: { tenantId, status: 'open' } }),
+      this.prisma.task.count({ where: { tenantId, status: { in: ['todo', 'in_progress'] } } }),
+      this.prisma.unit.count({ where: { tenantId } }),
+      this.prisma.unit.count({ where: { tenantId, status: 'occupied' } }),
+      this.prisma.unit.count({ where: { tenantId, status: 'vacant' } }),
     ]);
     return {
       totalVisitors,
@@ -89,6 +99,11 @@ export class ReportsService {
       totalVendors,
       pendingPackages,
       activeBolos,
+      openViolations,
+      pendingTasks,
+      totalUnits,
+      occupiedUnits,
+      vacantUnits,
     };
   }
 

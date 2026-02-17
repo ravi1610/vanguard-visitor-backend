@@ -46,7 +46,7 @@ export class UsersService {
         ...(dto.workInfo != null && { workInfo: dto.workInfo }),
         ...(dto.note != null && { note: dto.note }),
         ...(dto.photoUrl != null && { photoUrl: dto.photoUrl }),
-        ...(dto.unit != null && { unit: dto.unit }),
+        ...(dto.unitId != null && { unitId: dto.unitId }),
         ...(dto.phone != null && { phone: dto.phone }),
         ...(dto.mobile != null && { mobile: dto.mobile }),
         ...(dto.dateOfBirth != null && { dateOfBirth: new Date(dto.dateOfBirth) }),
@@ -80,7 +80,7 @@ export class UsersService {
         { firstName: { contains: search, mode: 'insensitive' } },
         { lastName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
-        { unit: { contains: search, mode: 'insensitive' } },
+        { unit: { unitNumber: { contains: search, mode: 'insensitive' } } },
         { phone: { contains: search, mode: 'insensitive' } },
         { mobile: { contains: search, mode: 'insensitive' } },
       ];
@@ -90,7 +90,7 @@ export class UsersService {
     const skip = (page - 1) * pageSize;
     const take = pageSize;
 
-    const sortField = query.sortField && ['firstName', 'lastName', 'email', 'residentType', 'createdAt', 'unit', 'leaseBeginDate', 'leaseEndDate'].includes(query.sortField)
+    const sortField = query.sortField && ['firstName', 'lastName', 'email', 'residentType', 'createdAt', 'leaseBeginDate', 'leaseEndDate'].includes(query.sortField)
       ? query.sortField
       : 'createdAt';
     const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
@@ -117,7 +117,8 @@ export class UsersService {
           workInfo: true,
           note: true,
           photoUrl: true,
-          unit: true,
+          unitId: true,
+          unit: { select: { id: true, unitNumber: true, building: true } },
           phone: true,
           mobile: true,
           dateOfBirth: true,
@@ -136,6 +137,7 @@ export class UsersService {
       where: { id, tenantId },
       include: {
         userRoles: { include: { role: true } },
+        unit: { select: { id: true, unitNumber: true, building: true } },
         _count: {
           select: {
             hostedVisits: true,
@@ -170,7 +172,7 @@ export class UsersService {
     if (dto.workInfo !== undefined) data.workInfo = dto.workInfo;
     if (dto.note !== undefined) data.note = dto.note;
     if (dto.photoUrl !== undefined) data.photoUrl = dto.photoUrl;
-    if (dto.unit !== undefined) data.unit = dto.unit || null;
+    if (dto.unitId !== undefined) data.unitId = dto.unitId || null;
     if (dto.phone !== undefined) data.phone = dto.phone || null;
     if (dto.mobile !== undefined) data.mobile = dto.mobile || null;
     if (dto.dateOfBirth !== undefined) data.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;

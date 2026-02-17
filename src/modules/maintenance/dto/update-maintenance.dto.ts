@@ -21,7 +21,7 @@ export class UpdateMaintenanceDto {
 
   @IsOptional()
   @IsString()
-  propertyUnit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

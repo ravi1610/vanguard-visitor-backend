@@ -65,7 +65,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  unit?: string;
+  unitId?: string;
 
   @IsOptional()
   @IsString()

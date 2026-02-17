@@ -15,6 +15,7 @@ export class ViolationsService {
       data: {
         tenantId,
         userId: dto.userId,
+        unitId: dto.unitId,
         title: dto.title,
         description: dto.description,
         type: dto.type ?? 'other',
@@ -53,6 +54,10 @@ export class ViolationsService {
         skip,
         take: pageSize,
         orderBy: { [sortField]: sortDir },
+        include: {
+          unit: { select: { id: true, unitNumber: true, building: true } },
+          user: { select: { id: true, firstName: true, lastName: true } },
+        },
       }),
       this.prisma.violation.count({ where }),
     ]);
@@ -82,6 +87,7 @@ export class ViolationsService {
           resolvedDate: dto.resolvedDate ? new Date(dto.resolvedDate) : null,
         }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
+        ...(dto.unitId !== undefined && { unitId: dto.unitId || null }),
       },
     });
   }
