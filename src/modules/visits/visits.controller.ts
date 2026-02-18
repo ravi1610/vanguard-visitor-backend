@@ -9,12 +9,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { VisitsService } from './visits.service';
 import { CheckInDto } from './dto/checkin.dto';
 import { ScheduleVisitDto } from './dto/schedule-visit.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VisitStatus } from '@prisma/client';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
@@ -31,6 +33,10 @@ export class VisitsController {
 
   private get qrSecret(): string {
     return this.config.get<string>('QR_SECRET') || 'vanguard-dev-qr-secret';
+  }
+
+  private get appUrl(): string {
+    return this.config.get<string>('app.url') || 'http://localhost:5173';
   }
 
   @Get()
@@ -88,7 +94,15 @@ export class VisitsController {
     @CurrentUser('tenantId') tenantId: string,
     @Body() dto: ScheduleVisitDto,
   ) {
-    return this.visits.schedule(tenantId, dto, this.qrSecret);
+    return this.visits.schedule(tenantId, dto, this.qrSecret, this.appUrl);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('public-scan')
+  @ApiOperation({ summary: 'Public QR scan — check in visitor without auth (rate-limited)' })
+  publicScan(@Body() body: { token: string }) {
+    return this.visits.publicScanQr(body.token, this.qrSecret);
   }
 
   @Post('scan-qr')
@@ -110,7 +124,7 @@ export class VisitsController {
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.visits.generateQr(tenantId, id, this.qrSecret);
+    return this.visits.generateQr(tenantId, id, this.qrSecret, this.appUrl);
   }
 
   @Post(':id/checkout')

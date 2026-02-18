@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Role } from '@prisma/client';
+
+const RBAC_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 const PERMISSION_KEYS = [
   'tenant.manage',
@@ -95,7 +98,10 @@ const DEFAULT_ROLES: Record<
 
 @Injectable()
 export class RbacService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
+  ) {}
 
   getPermissionsFromRoles(roles: { rolePermissions: { permission: { key: string } }[] }[]): string[] {
     const set = new Set<string>();
@@ -182,6 +188,9 @@ export class RbacService {
         });
       }
     }
+
+    // Invalidate cached roles after seeding/updating
+    await this.cache.del(`rbac:roles:${tenantId}`);
   }
 
   /** Sync default role permissions for all tenants (e.g. after adding new permissions). */
@@ -195,11 +204,18 @@ export class RbacService {
   }
 
   async getRolesForTenant(tenantId: string) {
-    return this.prisma.role.findMany({
+    const cacheKey = `rbac:roles:${tenantId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
+    const roles = await this.prisma.role.findMany({
       where: { tenantId },
       include: {
         rolePermissions: { include: { permission: true } },
       },
     });
+
+    await this.cache.set(cacheKey, roles, RBAC_CACHE_TTL);
+    return roles;
   }
 }

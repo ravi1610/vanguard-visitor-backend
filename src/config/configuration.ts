@@ -24,5 +24,8 @@ export default () => {
     redis: {
       url: process.env.REDIS_URL ?? '',
     },
+    app: {
+      url: process.env.APP_URL ?? 'http://localhost:5173',
+    },
   };
 };

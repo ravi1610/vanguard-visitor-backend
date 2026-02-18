@@ -1,20 +1,25 @@
 import {
+  Inject,
   Injectable,
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { Prisma } from '@prisma/client';
 
+const TENANT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 @Injectable()
 export class TenantsService {
   constructor(
     private prisma: PrismaService,
     private rbac: RbacService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
 
   /**
@@ -105,6 +110,10 @@ export class TenantsService {
   }
 
   async getMyTenant(tenantId: string) {
+    const cacheKey = `tenant:${tenantId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId, isActive: true },
       include: {
@@ -112,6 +121,8 @@ export class TenantsService {
       },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
+
+    await this.cache.set(cacheKey, tenant, TENANT_CACHE_TTL);
     return tenant;
   }
 
@@ -125,7 +136,7 @@ export class TenantsService {
     }
 
     try {
-      return await this.prisma.tenant.update({
+      const updated = await this.prisma.tenant.update({
         where: { id: tenantId },
         data: {
           ...(dto.name != null && { name: dto.name }),
@@ -133,6 +144,9 @@ export class TenantsService {
           ...(dto.isActive != null && { isActive: dto.isActive }),
         },
       });
+
+      await this.cache.del(`tenant:${tenantId}`);
+      return updated;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

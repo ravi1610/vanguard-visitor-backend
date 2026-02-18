@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
+
+const UNIT_DETAIL_TTL = 2 * 60 * 1000; // 2 minutes
 
 const UNIT_SORT_FIELDS = [
   'unitNumber',
@@ -15,7 +18,10 @@ const UNIT_SORT_FIELDS = [
 
 @Injectable()
 export class UnitsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
+  ) {}
 
   async create(tenantId: string, dto: CreateUnitDto) {
     return this.prisma.unit.create({
@@ -115,6 +121,10 @@ export class UnitsService {
   }
 
   async findOne(tenantId: string, id: string) {
+    const cacheKey = `unit:${tenantId}:${id}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const unit = await this.prisma.unit.findFirst({
       where: { id, tenantId },
       include: {
@@ -179,12 +189,14 @@ export class UnitsService {
       },
     });
     if (!unit) throw new NotFoundException('Unit not found');
+
+    await this.cache.set(cacheKey, unit, UNIT_DETAIL_TTL);
     return unit;
   }
 
   async update(tenantId: string, id: string, dto: UpdateUnitDto) {
     await this.findOne(tenantId, id);
-    return this.prisma.unit.update({
+    const updated = await this.prisma.unit.update({
       where: { id },
       data: {
         ...(dto.unitNumber != null && { unitNumber: dto.unitNumber }),
@@ -195,10 +207,16 @@ export class UnitsService {
         ...(dto.notes !== undefined && { notes: dto.notes }),
       },
     });
+
+    await this.cache.del(`unit:${tenantId}:${id}`);
+    return updated;
   }
 
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
-    return this.prisma.unit.delete({ where: { id } });
+    const deleted = await this.prisma.unit.delete({ where: { id } });
+
+    await this.cache.del(`unit:${tenantId}:${id}`);
+    return deleted;
   }
 }

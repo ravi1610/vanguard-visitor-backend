@@ -1,8 +1,10 @@
 import {
+  Inject,
   Injectable,
   UnauthorizedException,
   OnModuleInit,
 } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -26,16 +28,16 @@ const USER_WITH_ROLES_INCLUDE = {
   },
 } as const;
 
+/** TTL for JWT active-status cache (5 minutes) */
+const JWT_CACHE_TTL = 5 * 60 * 1000;
+
 @Injectable()
 export class AuthService implements OnModuleInit {
-  /** In-memory cache: skip DB on every JWT validation, recheck every 5 min */
-  private activeCache = new Map<string, { active: boolean; at: number }>();
-  private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private rbac: RbacService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
 
   async onModuleInit() {
@@ -205,30 +207,30 @@ export class AuthService implements OnModuleInit {
   }
 
   async validatePayload(payload: JwtPayload) {
-    const now = Date.now();
-    const cached = this.activeCache.get(payload.sub);
+    const cacheKey = `jwt:active:${payload.sub}`;
+    const cached = await this.cache.get<boolean>(cacheKey);
 
     // Cache hit — skip DB entirely
-    if (cached && now - cached.at < AuthService.CACHE_TTL) {
-      if (!cached.active) return null;
+    if (cached !== undefined && cached !== null) {
+      if (!cached) return null;
       return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
     }
 
-    // Cache miss or stale — lightweight DB check (only booleans, no relations)
+    // Cache miss — lightweight DB check (only booleans, no relations)
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { isActive: true, tenant: { select: { isActive: true } } },
     });
 
     const active = !!(user?.isActive && user?.tenant?.isActive);
-    this.activeCache.set(payload.sub, { active, at: now });
+    await this.cache.set(cacheKey, active, JWT_CACHE_TTL);
 
     if (!active) return null;
     return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
   }
 
-  /** Force re-check on next request (call when deactivating a user) */
-  invalidateUserCache(userId: string) {
-    this.activeCache.delete(userId);
+  /** Force re-check on next request — works across all containers via Redis */
+  async invalidateUserCache(userId: string) {
+    await this.cache.del(`jwt:active:${userId}`);
   }
 }

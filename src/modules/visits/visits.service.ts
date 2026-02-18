@@ -1,8 +1,10 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VisitStatus } from '@prisma/client';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
@@ -13,6 +15,8 @@ import {
   generateQrDataUrl,
   verifyQrToken,
 } from '../../common/utils/qr';
+
+const ACTIVE_VISITS_TTL = 30_000; // 30 seconds
 
 const VISIT_SORT_FIELDS = ['createdAt', 'checkInAt', 'checkOutAt', 'status'] as const;
 
@@ -25,7 +29,10 @@ const VISIT_INCLUDE = {
 
 @Injectable()
 export class VisitsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
+  ) {}
 
   async checkIn(tenantId: string, dto: CheckInDto) {
     const [visitor, host] = await Promise.all([
@@ -36,7 +43,7 @@ export class VisitsService {
     if (!host) throw new NotFoundException('Host user not found');
 
     const now = new Date();
-    return this.prisma.visit.create({
+    const visit = await this.prisma.visit.create({
       data: {
         tenantId,
         visitorId: dto.visitorId,
@@ -48,9 +55,13 @@ export class VisitsService {
       },
       include: VISIT_INCLUDE,
     });
+
+    // Invalidate active visits cache on check-in
+    await this.cache.del(`visits:active:${tenantId}`);
+    return visit;
   }
 
-  async schedule(tenantId: string, dto: ScheduleVisitDto, qrSecret: string) {
+  async schedule(tenantId: string, dto: ScheduleVisitDto, qrSecret: string, appUrl: string) {
     const [visitor, host] = await Promise.all([
       this.prisma.visitor.findFirst({ where: { id: dto.visitorId, tenantId } }),
       this.prisma.user.findFirst({ where: { id: dto.hostUserId, tenantId } }),
@@ -74,13 +85,13 @@ export class VisitsService {
 
     // Generate QR code if requested (default true)
     if (dto.generateQr !== false) {
-      return this.generateQr(tenantId, visit.id, qrSecret);
+      return this.generateQr(tenantId, visit.id, qrSecret, appUrl);
     }
 
     return visit;
   }
 
-  async generateQr(tenantId: string, visitId: string, secret: string) {
+  async generateQr(tenantId: string, visitId: string, secret: string, appUrl: string) {
     const visit = await this.prisma.visit.findFirst({
       where: { id: visitId, tenantId },
     });
@@ -90,7 +101,9 @@ export class VisitsService {
     }
 
     const qrToken = generateQrToken(visitId, secret);
-    const qrCode = await generateQrDataUrl(qrToken);
+    // Encode a full URL so iPhone/Android cameras auto-open browser on scan
+    const qrUrl = `${appUrl}/scan/${qrToken}`;
+    const qrCode = await generateQrDataUrl(qrUrl);
 
     return this.prisma.visit.update({
       where: { id: visitId },
@@ -122,11 +135,15 @@ export class VisitsService {
     }
 
     const now = new Date();
-    return this.prisma.visit.update({
+    const updated = await this.prisma.visit.update({
       where: { id: result.visitId },
       data: { checkInAt: now, status: VisitStatus.checked_in },
       include: VISIT_INCLUDE,
     });
+
+    // Invalidate active visits cache on QR check-in
+    await this.cache.del(`visits:active:${tenantId}`);
+    return updated;
   }
 
   async checkout(tenantId: string, visitId: string) {
@@ -140,11 +157,15 @@ export class VisitsService {
     }
 
     const now = new Date();
-    return this.prisma.visit.update({
+    const updated = await this.prisma.visit.update({
       where: { id: visitId },
       data: { checkOutAt: now, status: VisitStatus.checked_out },
       include: VISIT_INCLUDE,
     });
+
+    // Invalidate active visits cache on check-out
+    await this.cache.del(`visits:active:${tenantId}`);
+    return updated;
   }
 
   async findAll(
@@ -199,10 +220,64 @@ export class VisitsService {
   }
 
   async findActive(tenantId: string) {
-    return this.prisma.visit.findMany({
+    const cacheKey = `visits:active:${tenantId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
+    const visits = await this.prisma.visit.findMany({
       where: { tenantId, status: VisitStatus.checked_in },
       orderBy: { checkInAt: 'desc' },
       include: VISIT_INCLUDE,
     });
+
+    await this.cache.set(cacheKey, visits, ACTIVE_VISITS_TTL);
+    return visits;
+  }
+
+  /**
+   * Public QR scan — no auth required. Token is HMAC-signed so it can't be forged.
+   * Returns limited data (visitor name + check-in time only).
+   */
+  async publicScanQr(token: string, secret: string) {
+    const result = verifyQrToken(token, secret);
+    if (!result.valid || !result.visitId) {
+      throw new BadRequestException('Invalid QR code');
+    }
+
+    const visit = await this.prisma.visit.findUnique({
+      where: { id: result.visitId },
+      include: {
+        visitor: { select: { firstName: true, lastName: true, company: true } },
+      },
+    });
+    if (!visit) throw new NotFoundException('Visit not found');
+
+    if (visit.status === VisitStatus.checked_in) {
+      throw new BadRequestException('Visitor is already checked in');
+    }
+    if (visit.status === VisitStatus.checked_out) {
+      throw new BadRequestException('Visit has already been completed');
+    }
+    if (visit.status !== VisitStatus.scheduled) {
+      throw new BadRequestException('Visit is not in a valid state for check-in');
+    }
+
+    const now = new Date();
+    await this.prisma.visit.update({
+      where: { id: result.visitId },
+      data: { checkInAt: now, status: VisitStatus.checked_in },
+    });
+
+    // Invalidate active visits cache
+    await this.cache.del(`visits:active:${visit.tenantId}`);
+
+    // Return limited public-safe data
+    return {
+      success: true,
+      visitorName: `${visit.visitor.firstName} ${visit.visitor.lastName}`,
+      company: visit.visitor.company,
+      purpose: visit.purpose,
+      checkInAt: now.toISOString(),
+    };
   }
 }
