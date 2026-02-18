@@ -1,4 +1,4 @@
-# Stage 1: Build
+# Stage 1: Install all dependencies and build
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
 
-# Install dependencies
+# Install ALL dependencies (single npm ci to avoid parallel network issues on small VPS)
 RUN npm ci
 
 # Copy source code
@@ -20,20 +20,21 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
-# Stage 2: Production
+# Stage 2: Production (copy from builder, prune dev deps)
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and node_modules from builder (avoids a second npm ci)
 COPY package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Prune dev dependencies (much faster than a full npm ci, no network needed)
+RUN npm prune --omit=dev
 
-# Copy Prisma schema and generate client
+# Generate Prisma client for production image
 RUN npx prisma generate
 
 # Copy built application from builder stage
