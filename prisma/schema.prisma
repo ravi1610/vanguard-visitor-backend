@@ -38,6 +38,7 @@ model Tenant {
   packages           Package[]
   bolos              Bolo[]
   units              Unit[]
+  tenantSettings     TenantSetting[]
 
   @@map("tenants")
 }
@@ -92,6 +93,7 @@ model User {
   firstName    String   @map("first_name")
   lastName     String   @map("last_name")
   isActive     Boolean  @default(true) @map("is_active")
+  isSuperAdmin Boolean  @default(false) @map("is_super_admin")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -710,4 +712,34 @@ model Bolo {
   @@index([tenantId])
   @@index([tenantId, status])
   @@map("bolos")
+}
+
+// ── System & Tenant Settings ─────────────────────────────────────
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  isSecret  Boolean  @default(false) @map("is_secret")
+  category  String   @default("general")
+  label     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model TenantSetting {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  key       String
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("tenant_settings")
 }

@@ -5,6 +5,9 @@ export default () => {
   if (isProduction && !process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET environment variable is required in production');
   }
+  if (isProduction && !process.env.SETTINGS_ENCRYPTION_KEY) {
+    throw new Error('SETTINGS_ENCRYPTION_KEY environment variable is required in production');
+  }
 
   return {
     port: parseInt(process.env.PORT ?? '3000', 10),
@@ -26,6 +29,9 @@ export default () => {
     },
     app: {
       url: process.env.APP_URL ?? 'http://localhost:5173',
+    },
+    settings: {
+      encryptionKey: process.env.SETTINGS_ENCRYPTION_KEY ?? 'dev-only-32-char-key-change-me!!',
     },
   };
 };

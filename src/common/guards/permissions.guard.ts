@@ -21,6 +21,10 @@ export class PermissionsGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
     const payload = user as JwtPayload;
+
+    // Superadmins bypass all permission checks
+    if (payload?.isSuperAdmin) return true;
+
     const hasAll = requiredPermissions.every((perm) =>
       payload?.permissions?.includes(perm),
     );

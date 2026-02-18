@@ -6,6 +6,7 @@ export interface JwtPayload {
   tenantId: string;
   roles: string[];
   permissions: string[];
+  isSuperAdmin: boolean;
 }
 
 export const CurrentUser = createParamDecorator(

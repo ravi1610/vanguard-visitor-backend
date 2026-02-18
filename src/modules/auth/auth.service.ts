@@ -52,6 +52,7 @@ export class AuthService implements OnModuleInit {
     tenantId: string;
     firstName: string;
     lastName: string;
+    isSuperAdmin: boolean;
     tenant: { name: string } | null;
     userRoles: { role: { key: string; rolePermissions: { permission: { key: string } }[] } }[];
   }) {
@@ -66,6 +67,7 @@ export class AuthService implements OnModuleInit {
       tenantName: user.tenant?.name ?? '',
       firstName: user.firstName,
       lastName: user.lastName,
+      isSuperAdmin: user.isSuperAdmin,
       roles,
       permissions,
     };
@@ -100,6 +102,7 @@ export class AuthService implements OnModuleInit {
       tenantName: string;
       firstName: string;
       lastName: string;
+      isSuperAdmin: boolean;
       roles: string[];
       permissions: string[];
     },
@@ -111,6 +114,7 @@ export class AuthService implements OnModuleInit {
       tenantId: user.tenantId,
       roles: user.roles,
       permissions: user.permissions,
+      isSuperAdmin: user.isSuperAdmin,
     };
     const accessToken = this.jwt.sign(payload, {
       expiresIn: rememberMe ? '30d' : '24h',
@@ -124,6 +128,7 @@ export class AuthService implements OnModuleInit {
         tenantName: user.tenantName,
         firstName: user.firstName,
         lastName: user.lastName,
+        isSuperAdmin: user.isSuperAdmin,
         roles: user.roles,
         permissions: user.permissions,
       },
@@ -213,7 +218,7 @@ export class AuthService implements OnModuleInit {
     // Cache hit — skip DB entirely
     if (cached !== undefined && cached !== null) {
       if (!cached) return null;
-      return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
+      return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin: payload.isSuperAdmin ?? false };
     }
 
     // Cache miss — lightweight DB check (only booleans, no relations)
@@ -226,7 +231,7 @@ export class AuthService implements OnModuleInit {
     await this.cache.set(cacheKey, active, JWT_CACHE_TTL);
 
     if (!active) return null;
-    return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
+    return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin: payload.isSuperAdmin ?? false };
   }
 
   /** Force re-check on next request — works across all containers via Redis */

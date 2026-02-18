@@ -36,6 +36,7 @@ export class AuthController {
       tenantName: string;
       firstName: string;
       lastName: string;
+      isSuperAdmin: boolean;
       roles: string[];
       permissions: string[];
     },

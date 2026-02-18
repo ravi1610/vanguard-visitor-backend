@@ -102,9 +102,10 @@ async function main() {
       firstName: 'Admin',
       lastName: 'User',
       isActive: true,
+      isSuperAdmin: true,
       userRoles: { create: { roleId: role.id } },
     },
-    update: {},
+    update: { isSuperAdmin: true },
     include: { userRoles: { include: { role: true } } },
   });
 
