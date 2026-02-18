@@ -71,6 +71,7 @@ model Unit {
 
   @@unique([tenantId, unitNumber])
   @@index([tenantId])
+  @@index([tenantId, status])
   @@map("units")
 }
 
@@ -427,6 +428,7 @@ model Task {
 
   @@index([tenantId])
   @@index([projectId])
+  @@index([tenantId, status])
   @@map("tasks")
 }
 

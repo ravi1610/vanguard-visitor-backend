@@ -28,6 +28,10 @@ const USER_WITH_ROLES_INCLUDE = {
 
 @Injectable()
 export class AuthService implements OnModuleInit {
+  /** In-memory cache: skip DB on every JWT validation, recheck every 5 min */
+  private activeCache = new Map<string, { active: boolean; at: number }>();
+  private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -201,15 +205,30 @@ export class AuthService implements OnModuleInit {
   }
 
   async validatePayload(payload: JwtPayload) {
+    const now = Date.now();
+    const cached = this.activeCache.get(payload.sub);
+
+    // Cache hit — skip DB entirely
+    if (cached && now - cached.at < AuthService.CACHE_TTL) {
+      if (!cached.active) return null;
+      return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
+    }
+
+    // Cache miss or stale — lightweight DB check (only booleans, no relations)
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: { tenant: true },
+      select: { isActive: true, tenant: { select: { isActive: true } } },
     });
-    if (!user || !user.isActive || !user.tenant?.isActive) return null;
-    return {
-      ...payload,
-      roles: payload.roles ?? [],
-      permissions: payload.permissions ?? [],
-    };
+
+    const active = !!(user?.isActive && user?.tenant?.isActive);
+    this.activeCache.set(payload.sub, { active, at: now });
+
+    if (!active) return null;
+    return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [] };
+  }
+
+  /** Force re-check on next request (call when deactivating a user) */
+  invalidateUserCache(userId: string) {
+    this.activeCache.delete(userId);
   }
 }

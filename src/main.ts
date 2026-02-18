@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
+import compression from 'compression';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
@@ -12,6 +13,9 @@ async function bootstrap() {
 
   // Graceful shutdown — let Prisma disconnect cleanly on SIGTERM/SIGINT
   app.enableShutdownHooks();
+
+  // Gzip compress all HTTP responses (~70% smaller JSON payloads)
+  app.use(compression());
 
   // Security headers
   app.getHttpAdapter().getInstance().disable('x-powered-by');

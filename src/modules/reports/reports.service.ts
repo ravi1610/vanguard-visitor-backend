@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -42,68 +43,73 @@ export class ReportsService {
     };
   }
 
+  /**
+   * Dashboard stats — consolidated from 19 Prisma counts into 3 raw SQL queries.
+   * Table/column names match @@map annotations in schema.prisma.
+   */
   async getDashboardStats(tenantId: string) {
-    const [
-      totalVisitors,
-      totalVisits,
-      activeVisits,
-      totalUsers,
-      totalStaff,
-      totalVehicles,
-      openMaintenance,
-      activeProjects,
-      upcomingEvents,
-      pendingCompliance,
-      totalDocuments,
-      totalVendors,
-      pendingPackages,
-      activeBolos,
-      openViolations,
-      pendingTasks,
-      totalUnits,
-      occupiedUnits,
-      vacantUnits,
-    ] = await Promise.all([
-      this.prisma.visitor.count({ where: { tenantId } }),
-      this.prisma.visit.count({ where: { tenantId } }),
-      this.prisma.visit.count({ where: { tenantId, status: 'checked_in' } }),
-      this.prisma.user.count({ where: { tenantId, isActive: true } }),
-      this.prisma.staff.count({ where: { tenantId, isActive: true } }),
-      this.prisma.vehicle.count({ where: { tenantId } }),
-      this.prisma.maintenance.count({ where: { tenantId, status: 'open' } }),
-      this.prisma.project.count({ where: { tenantId, status: 'active' } }),
-      this.prisma.calendarEvent.count({ where: { tenantId, startAt: { gte: new Date() } } }),
-      this.prisma.complianceItem.count({ where: { tenantId, status: 'pending' } }),
-      this.prisma.document.count({ where: { tenantId } }),
-      this.prisma.vendor.count({ where: { tenantId } }),
-      this.prisma.package.count({ where: { tenantId, status: { in: ['received', 'notified'] } } }),
-      this.prisma.bolo.count({ where: { tenantId, status: 'active' } }),
-      this.prisma.violation.count({ where: { tenantId, status: 'open' } }),
-      this.prisma.task.count({ where: { tenantId, status: { in: ['todo', 'in_progress'] } } }),
-      this.prisma.unit.count({ where: { tenantId } }),
-      this.prisma.unit.count({ where: { tenantId, status: 'occupied' } }),
-      this.prisma.unit.count({ where: { tenantId, status: 'vacant' } }),
+    type Row = Record<string, bigint>;
+    const tid = tenantId;
+
+    const [totals, filtered, units] = await Promise.all([
+      // Query 1: Simple tenant-scoped totals (no status filter)
+      this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT
+          (SELECT COUNT(*) FROM visitors   WHERE tenant_id = ${tid}) AS total_visitors,
+          (SELECT COUNT(*) FROM visits     WHERE tenant_id = ${tid}) AS total_visits,
+          (SELECT COUNT(*) FROM vehicles   WHERE tenant_id = ${tid}) AS total_vehicles,
+          (SELECT COUNT(*) FROM documents  WHERE tenant_id = ${tid}) AS total_documents,
+          (SELECT COUNT(*) FROM vendors    WHERE tenant_id = ${tid}) AS total_vendors
+      `),
+      // Query 2: Status/condition filtered counts
+      this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT
+          (SELECT COUNT(*) FROM visits            WHERE tenant_id = ${tid} AND status = 'checked_in')                  AS active_visits,
+          (SELECT COUNT(*) FROM users             WHERE tenant_id = ${tid} AND is_active = true)                       AS active_users,
+          (SELECT COUNT(*) FROM staff             WHERE tenant_id = ${tid} AND is_active = true)                       AS active_staff,
+          (SELECT COUNT(*) FROM maintenance       WHERE tenant_id = ${tid} AND status = 'open')                        AS open_maintenance,
+          (SELECT COUNT(*) FROM projects          WHERE tenant_id = ${tid} AND status = 'active')                      AS active_projects,
+          (SELECT COUNT(*) FROM calendar_events   WHERE tenant_id = ${tid} AND start_at >= NOW())                      AS upcoming_events,
+          (SELECT COUNT(*) FROM compliance_items  WHERE tenant_id = ${tid} AND status = 'pending')                     AS pending_compliance,
+          (SELECT COUNT(*) FROM packages          WHERE tenant_id = ${tid} AND status IN ('received', 'notified'))     AS pending_packages,
+          (SELECT COUNT(*) FROM bolos             WHERE tenant_id = ${tid} AND status = 'active')                      AS active_bolos,
+          (SELECT COUNT(*) FROM violations        WHERE tenant_id = ${tid} AND status = 'open')                        AS open_violations,
+          (SELECT COUNT(*) FROM tasks             WHERE tenant_id = ${tid} AND status IN ('todo', 'in_progress'))      AS pending_tasks
+      `),
+      // Query 3: Unit breakdown
+      this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT
+          COUNT(*)                                    AS total_units,
+          COUNT(*) FILTER (WHERE status = 'occupied') AS occupied_units,
+          COUNT(*) FILTER (WHERE status = 'vacant')   AS vacant_units
+        FROM units WHERE tenant_id = ${tid}
+      `),
     ]);
+
+    const t = totals[0];
+    const f = filtered[0];
+    const u = units[0];
+
     return {
-      totalVisitors,
-      totalVisits,
-      activeVisits,
-      totalUsers,
-      totalStaff,
-      totalVehicles,
-      openMaintenance,
-      activeProjects,
-      upcomingEvents,
-      pendingCompliance,
-      totalDocuments,
-      totalVendors,
-      pendingPackages,
-      activeBolos,
-      openViolations,
-      pendingTasks,
-      totalUnits,
-      occupiedUnits,
-      vacantUnits,
+      totalVisitors:     Number(t.total_visitors),
+      totalVisits:       Number(t.total_visits),
+      activeVisits:      Number(f.active_visits),
+      totalUsers:        Number(f.active_users),
+      totalStaff:        Number(f.active_staff),
+      totalVehicles:     Number(t.total_vehicles),
+      openMaintenance:   Number(f.open_maintenance),
+      activeProjects:    Number(f.active_projects),
+      upcomingEvents:    Number(f.upcoming_events),
+      pendingCompliance: Number(f.pending_compliance),
+      totalDocuments:    Number(t.total_documents),
+      totalVendors:      Number(t.total_vendors),
+      pendingPackages:   Number(f.pending_packages),
+      activeBolos:       Number(f.active_bolos),
+      openViolations:    Number(f.open_violations),
+      pendingTasks:      Number(f.pending_tasks),
+      totalUnits:        Number(u.total_units),
+      occupiedUnits:     Number(u.occupied_units),
+      vacantUnits:       Number(u.vacant_units),
     };
   }
 
