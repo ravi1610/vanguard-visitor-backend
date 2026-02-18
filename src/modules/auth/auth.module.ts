@@ -15,12 +15,9 @@ import { RbacModule } from '../rbac/rbac.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        secret:
-          config.get<string>('jwt.secret') ??
-          process.env.JWT_SECRET ??
-          'change-me',
+        secret: config.getOrThrow<string>('jwt.secret'),
         signOptions: {
-          expiresIn: '24h', // Default session: 24 hours
+          expiresIn: config.getOrThrow<string>('jwt.expiresIn') as any,
         },
       }),
       inject: [ConfigService],

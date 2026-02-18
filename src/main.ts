@@ -10,6 +10,12 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
 
+  // Graceful shutdown — let Prisma disconnect cleanly on SIGTERM/SIGINT
+  app.enableShutdownHooks();
+
+  // Security headers
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
+
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );

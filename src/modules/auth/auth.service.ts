@@ -10,6 +10,22 @@ import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { RbacService } from '../rbac/rbac.service';
 
+/** Reusable Prisma include for loading a user with tenant + roles + permissions */
+const USER_WITH_ROLES_INCLUDE = {
+  tenant: true,
+  userRoles: {
+    include: {
+      role: {
+        include: {
+          rolePermissions: {
+            include: { permission: true },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 @Injectable()
 export class AuthService implements OnModuleInit {
   constructor(
@@ -23,43 +39,43 @@ export class AuthService implements OnModuleInit {
     await this.rbac.syncAllTenantsDefaultRoles();
   }
 
-  async validateUser(email: string, password: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { email: email.toLowerCase(), isActive: true },
-      include: {
-        tenant: true,
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: { permission: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-    if (!user?.tenant?.isActive) return null;
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return null;
-
+  /** Map a user record (with nested roles) to a flat auth profile */
+  private toAuthProfile(user: {
+    id: string;
+    email: string;
+    tenantId: string;
+    firstName: string;
+    lastName: string;
+    tenant: { name: string } | null;
+    userRoles: { role: { key: string; rolePermissions: { permission: { key: string } }[] } }[];
+  }) {
     const roles = user.userRoles.map((ur) => ur.role.key);
     const permissions = this.rbac.getPermissionsFromRoles(
       user.userRoles.map((ur) => ur.role),
     );
-
     return {
       id: user.id,
       email: user.email,
       tenantId: user.tenantId,
-      tenantName: user.tenant.name,
+      tenantName: user.tenant?.name ?? '',
       firstName: user.firstName,
       lastName: user.lastName,
       roles,
       permissions,
     };
+  }
+
+  async validateUser(email: string, password: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { email: email.toLowerCase(), isActive: true },
+      include: USER_WITH_ROLES_INCLUDE,
+    });
+    if (!user?.tenant?.isActive) return null;
+
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return null;
+
+    return this.toAuthProfile(user);
   }
 
   async login(dto: LoginDto) {
@@ -146,14 +162,12 @@ export class AuthService implements OnModuleInit {
    * by matching the current user's email, then issues a fresh JWT for that record.
    */
   async switchTenant(currentUserId: string, targetTenantId: string) {
-    // Get current user's email
     const currentUser = await this.prisma.user.findUnique({
       where: { id: currentUserId },
       select: { email: true },
     });
     if (!currentUser) throw new UnauthorizedException('User not found');
 
-    // Find the user record in the target tenant with the same email
     const targetUser = await this.prisma.user.findFirst({
       where: {
         email: currentUser.email,
@@ -161,20 +175,7 @@ export class AuthService implements OnModuleInit {
         isActive: true,
         tenant: { isActive: true },
       },
-      include: {
-        tenant: true,
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: { permission: true },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: USER_WITH_ROLES_INCLUDE,
     });
 
     if (!targetUser) {
@@ -183,61 +184,20 @@ export class AuthService implements OnModuleInit {
       );
     }
 
-    const roles = targetUser.userRoles.map((ur) => ur.role.key);
-    const permissions = this.rbac.getPermissionsFromRoles(
-      targetUser.userRoles.map((ur) => ur.role),
-    );
-
-    return this.issueTokenAndUser({
-      id: targetUser.id,
-      email: targetUser.email,
-      tenantId: targetUser.tenantId,
-      tenantName: targetUser.tenant.name,
-      firstName: targetUser.firstName,
-      lastName: targetUser.lastName,
-      roles,
-      permissions,
-    });
+    return this.issueTokenAndUser(this.toAuthProfile(targetUser));
   }
 
   async refreshToken(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        tenant: true,
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: { permission: true },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: USER_WITH_ROLES_INCLUDE,
     });
 
     if (!user || !user.isActive || !user.tenant?.isActive) {
       throw new UnauthorizedException('User or tenant is no longer active');
     }
 
-    const roles = user.userRoles.map((ur) => ur.role.key);
-    const permissions = this.rbac.getPermissionsFromRoles(
-      user.userRoles.map((ur) => ur.role),
-    );
-
-    return this.issueTokenAndUser({
-      id: user.id,
-      email: user.email,
-      tenantId: user.tenantId,
-      tenantName: user.tenant.name,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      roles,
-      permissions,
-    });
+    return this.issueTokenAndUser(this.toAuthProfile(user));
   }
 
   async validatePayload(payload: JwtPayload) {
