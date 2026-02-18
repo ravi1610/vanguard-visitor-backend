@@ -28,8 +28,8 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // Global API prefix — all routes become /api/*
-  app.setGlobalPrefix('api', { exclude: [] });
+  // Global API prefix — all routes become /api/* except health check
+  app.setGlobalPrefix('api', { exclude: ['health'] });
 
   // Serve uploaded files
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' });
