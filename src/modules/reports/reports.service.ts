@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class ReportsService {
-  constructor(private prisma: PrismaService) {}
+  private static readonly DASHBOARD_TTL = 60_000; // 60 seconds
+
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cache: Cache,
+  ) {}
 
   async getVisitsReport(tenantId: string, from?: string, to?: string) {
     const where: { tenantId: string; createdAt?: object } = { tenantId };
@@ -48,6 +54,11 @@ export class ReportsService {
    * Table/column names match @@map annotations in schema.prisma.
    */
   async getDashboardStats(tenantId: string) {
+    // Check Redis/in-memory cache first
+    const cacheKey = `dashboard:${tenantId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     type Row = Record<string, bigint>;
     const tid = tenantId;
 
@@ -90,7 +101,7 @@ export class ReportsService {
     const f = filtered[0];
     const u = units[0];
 
-    return {
+    const result = {
       totalVisitors:     Number(t.total_visitors),
       totalVisits:       Number(t.total_visits),
       activeVisits:      Number(f.active_visits),
@@ -111,6 +122,11 @@ export class ReportsService {
       occupiedUnits:     Number(u.occupied_units),
       vacantUnits:       Number(u.vacant_units),
     };
+
+    // Cache for 60 seconds — next request within window skips DB entirely
+    await this.cache.set(cacheKey, result, ReportsService.DASHBOARD_TTL);
+
+    return result;
   }
 
   async getVisitorsReport(tenantId: string, search?: string) {

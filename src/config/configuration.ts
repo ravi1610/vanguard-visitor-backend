@@ -21,5 +21,8 @@ export default () => {
         ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
         : ['http://localhost:5173', 'http://localhost:4173'],
     },
+    redis: {
+      url: process.env.REDIS_URL ?? '',
+    },
   };
 };

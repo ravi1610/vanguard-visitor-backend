@@ -6,6 +6,7 @@ import {
   ApiOkResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -20,6 +21,7 @@ export class AuthController {
 
   @Public()
   @UseGuards(LocalAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } }) // 5 login attempts per minute
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ type: LoginDto })
@@ -42,6 +44,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } }) // 10 refreshes per minute
   @Post('refresh-token')
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Re-issue JWT with current user state from database' })
