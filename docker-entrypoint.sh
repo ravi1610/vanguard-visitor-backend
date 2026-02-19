@@ -43,5 +43,12 @@ if [ "$RUN_SEED" = "true" ]; then
   echo "Seed completed"
 fi
 
+# Seed superadmin user if SEED_SUPERADMIN=true
+if [ "$SEED_SUPERADMIN" = "true" ]; then
+  echo "Seeding superadmin user..."
+  npx --yes tsx prisma/seed-superadmin.ts
+  echo "Superadmin seeded"
+fi
+
 echo "Starting application on port ${PORT:-3000}..."
 exec node dist/main
