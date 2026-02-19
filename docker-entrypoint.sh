@@ -31,22 +31,30 @@ until node -e "
 done
 echo "Database is reachable"
 
-# Run migrations
+# Run migrations (with timeout to prevent hanging)
 echo "Running database migrations..."
-npx prisma migrate deploy
+timeout 120 npx prisma migrate deploy || {
+  echo "WARNING: Migration timed out or failed (exit $?), continuing..."
+}
 echo "Migrations complete"
 
-# Run seed if RUN_SEED=true (first-time setup)
-if [ "$RUN_SEED" = "true" ]; then
-  echo "Running database seed..."
-  npx --yes tsx prisma/seed.ts
+# Run seed ONCE if RUN_SEED=true (first-time setup only)
+# Uses a marker file to prevent re-running on every container restart
+SEED_MARKER="/app/.seed-completed"
+if [ "$RUN_SEED" = "true" ] && [ ! -f "$SEED_MARKER" ]; then
+  echo "Running database seed (first-time setup)..."
+  timeout 120 npx --yes tsx prisma/seed.ts && touch "$SEED_MARKER"
   echo "Seed completed"
+elif [ "$RUN_SEED" = "true" ] && [ -f "$SEED_MARKER" ]; then
+  echo "Skipping seed (already completed — remove $SEED_MARKER to force re-run)"
 fi
 
-# Seed superadmin user if SEED_SUPERADMIN=true
+# Seed superadmin user if SEED_SUPERADMIN=true (idempotent, safe to run each start)
 if [ "$SEED_SUPERADMIN" = "true" ]; then
   echo "Seeding superadmin user..."
-  npx --yes tsx prisma/seed-superadmin.ts
+  timeout 60 npx --yes tsx prisma/seed-superadmin.ts || {
+    echo "WARNING: Superadmin seed failed (exit $?), continuing..."
+  }
   echo "Superadmin seeded"
 fi
 
