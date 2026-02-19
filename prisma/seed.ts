@@ -54,13 +54,11 @@ async function main() {
     'units.manage',
   ];
 
-  for (const key of permissions) {
-    await prisma.permission.upsert({
-      where: { key },
-      create: { key, description: key.replace('.', ' ') },
-      update: {},
-    });
-  }
+  // Batch insert — single query instead of N sequential upserts
+  await prisma.permission.createMany({
+    data: permissions.map((key) => ({ key, description: key.replace('.', ' ') })),
+    skipDuplicates: true,
+  });
 
   // ── Tenant ───────────────────────────────────────────────────────
   const tenant = await prisma.tenant.upsert({
@@ -81,14 +79,12 @@ async function main() {
     update: {},
   });
 
+  // Batch assign all permissions to tenant_owner role
   const permIds = await prisma.permission.findMany({ select: { id: true } });
-  for (const p of permIds) {
-    await prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId: role.id, permissionId: p.id } },
-      create: { roleId: role.id, permissionId: p.id },
-      update: {},
-    });
-  }
+  await prisma.rolePermission.createMany({
+    data: permIds.map((p) => ({ roleId: role.id, permissionId: p.id })),
+    skipDuplicates: true,
+  });
 
   // ── Admin User ───────────────────────────────────────────────────
   const email = 'admin@example.com';

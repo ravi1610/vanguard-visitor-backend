@@ -133,6 +133,9 @@ model User {
 
   @@unique([tenantId, email])
   @@index([tenantId])
+  @@index([unitId])
+  @@index([email])
+  @@index([tenantId, isActive])
   @@map("users")
 }
 
@@ -218,6 +221,7 @@ model Visitor {
 
   @@index([tenantId])
   @@index([tenantId, documentId])
+  @@index([email])
   @@map("visitors")
 }
 
@@ -251,6 +255,8 @@ model Visit {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([visitorId])
+  @@index([hostUserId])
   @@map("visits")
 }
 
@@ -278,6 +284,7 @@ model Staff {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, isActive])
   @@map("staff")
 }
 
@@ -314,6 +321,8 @@ model Vehicle {
   unit   Unit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
+  @@index([ownerId])
+  @@index([unitId])
   @@map("vehicles")
 }
 
@@ -354,6 +363,7 @@ model SpaceAssignment {
 
   @@index([tenantId])
   @@index([spaceId])
+  @@index([assigneeId])
   @@map("space_assignments")
 }
 
@@ -382,6 +392,8 @@ model Maintenance {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([assignedToUserId])
+  @@index([unitId])
   @@map("maintenance")
 }
 
@@ -431,6 +443,7 @@ model Task {
   @@index([tenantId])
   @@index([projectId])
   @@index([tenantId, status])
+  @@index([assignedToUserId])
   @@map("tasks")
 }
 
@@ -449,6 +462,7 @@ model CalendarEvent {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, startAt])
   @@map("calendar_events")
 }
 
@@ -467,6 +481,7 @@ model Document {
   uploadedBy User?  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
+  @@index([uploadedByUserId])
   @@map("documents")
 }
 
@@ -666,6 +681,7 @@ model Package {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([recipientId])
+  @@index([unitId])
   @@map("packages")
 }
 
@@ -711,6 +727,7 @@ model Bolo {
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([createdById])
   @@map("bolos")
 }
 

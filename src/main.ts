@@ -14,8 +14,9 @@ async function bootstrap() {
   // Graceful shutdown — let Prisma disconnect cleanly on SIGTERM/SIGINT
   app.enableShutdownHooks();
 
-  // Gzip compress all HTTP responses (~70% smaller JSON payloads)
-  app.use(compression());
+  // Gzip compress HTTP responses >1KB (~70% smaller JSON payloads)
+  // Skip tiny responses to save CPU cycles
+  app.use(compression({ threshold: 1024 }));
 
   // Security headers
   app.getHttpAdapter().getInstance().disable('x-powered-by');

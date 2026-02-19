@@ -41,8 +41,12 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Lightweight: only inserts genuinely new permission keys (skips if none missing)
     await this.rbac.seedPermissionsIfNeeded();
-    await this.rbac.syncAllTenantsDefaultRoles();
+    // Role sync now runs in background — doesn't block server startup
+    this.rbac.syncAllTenantsDefaultRoles().catch((err) => {
+      console.error('Background role sync failed:', err);
+    });
   }
 
   /** Map a user record (with nested roles) to a flat auth profile */

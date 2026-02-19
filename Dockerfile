@@ -36,9 +36,13 @@ COPY docker-entrypoint.sh ./
 
 RUN chmod +x docker-entrypoint.sh && mkdir -p uploads
 
+# Set Node.js memory limit and optimize GC for containers
+ENV NODE_OPTIONS="--max-old-space-size=512 --max-semi-space-size=64"
+ENV UV_THREADPOOL_SIZE=4
+
 EXPOSE 3000
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
