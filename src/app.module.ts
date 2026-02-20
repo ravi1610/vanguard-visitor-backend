@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -51,6 +52,18 @@ import configuration from './config/configuration';
         return { ttl: 60_000 };
       },
     }),
+
+    // ── BullMQ (Redis-backed job queue — only when REDIS_URL is set) ──
+    ...(process.env.REDIS_URL
+      ? [
+          BullModule.forRoot({
+            connection: {
+              host: new URL(process.env.REDIS_URL).hostname,
+              port: Number(new URL(process.env.REDIS_URL).port) || 6379,
+            },
+          }),
+        ]
+      : []),
 
     // ── Rate Limiting (100 req/min global) ──
     ThrottlerModule.forRoot({
