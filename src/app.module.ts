@@ -45,8 +45,12 @@ import configuration from './config/configuration';
       useFactory: async (config: ConfigService) => {
         const redisUrl = config.get<string>('redis.url');
         if (redisUrl) {
-          const { createKeyv } = await import('@keyv/redis');
-          return { stores: [createKeyv(redisUrl)], ttl: 60_000 };
+          try {
+            const { createKeyv } = await import('@keyv/redis');
+            return { stores: [createKeyv(redisUrl)], ttl: 60_000 };
+          } catch (err) {
+            console.warn('⚠ Redis cache unavailable, using in-memory:', err.message);
+          }
         }
         // Fallback: in-memory cache (zero-config for local dev)
         return { ttl: 60_000 };
@@ -57,10 +61,15 @@ import configuration from './config/configuration';
     ...(process.env.REDIS_URL
       ? [
           BullModule.forRoot({
-            connection: {
-              host: new URL(process.env.REDIS_URL).hostname,
-              port: Number(new URL(process.env.REDIS_URL).port) || 6379,
-            },
+            connection: (() => {
+              const url = new URL(process.env.REDIS_URL!);
+              return {
+                host: url.hostname,
+                port: Number(url.port) || 6379,
+                ...(url.password && { password: decodeURIComponent(url.password) }),
+                ...(url.username && url.username !== 'default' && { username: url.username }),
+              };
+            })(),
           }),
         ]
       : []),
