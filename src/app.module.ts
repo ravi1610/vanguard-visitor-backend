@@ -46,21 +46,21 @@ import configuration from './config/configuration';
         const redisUrl = config.get<string>('redis.url');
         if (redisUrl) {
           try {
-            // Verify Redis is reachable (ioredis available via bullmq)
-            const IORedis = (await import('ioredis')).default;
-            const probe = new IORedis(redisUrl, {
+            // Pre-flight: verify Redis is reachable (ioredis available via bullmq)
+            const Redis = (await import('ioredis')).default as any;
+            const probe = new Redis(redisUrl, {
               lazyConnect: true,
               maxRetriesPerRequest: 0,
               connectTimeout: 3000,
             });
             await probe.ping();
             await probe.quit();
-            // Use raw adapter — createKeyv() returns a Keyv instance from
-            // @keyv/redis's bundled keyv, which fails the instanceof check
-            // in @nestjs/cache-manager and crashes on double-wrapping.
-            const { KeyvRedis } = await import('@keyv/redis');
+            // Use the raw adapter (default export) — NOT createKeyv() which
+            // returns a Keyv from @keyv/redis's bundled keyv copy. That fails
+            // the instanceof check in @nestjs/cache-manager and crashes.
+            const KeyvRedis = (await import('@keyv/redis')).default;
             return { stores: [new KeyvRedis(redisUrl)], ttl: 60_000 };
-          } catch (err) {
+          } catch (err: any) {
             console.warn('⚠ Redis cache unavailable, using in-memory:', err.message);
           }
         }
