@@ -3,7 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  Post,
   Put,
   UseGuards,
 } from '@nestjs/common';
@@ -74,5 +77,28 @@ export class SettingsController {
     @Param('key') key: string,
   ) {
     return this.settings.deleteTenantSetting(tenantId, key);
+  }
+
+  // ── Test Connections ────────────────────────────────────────────
+
+  @Post('test/s3')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Test S3 storage connection' })
+  testS3Connection() {
+    return this.settings.testS3Connection();
+  }
+
+  @Post('test/email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a test email to verify SMTP settings' })
+  testEmailConnection() {
+    return this.settings.testEmailConnection();
+  }
+
+  @Post('test/sms')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Test Twilio SMS connection' })
+  testSmsConnection() {
+    return this.settings.testSmsConnection();
   }
 }

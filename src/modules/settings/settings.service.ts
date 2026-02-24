@@ -102,4 +102,130 @@ export class SettingsService {
       where: { tenantId_key: { tenantId, key } },
     });
   }
+
+  // ── Test Connections ────────────────────────────────────────────
+
+  /** Test S3 bucket connectivity */
+  async testS3Connection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const bucket = await this.getSystemSettingRaw('s3.bucket');
+      const region = await this.getSystemSettingRaw('s3.region');
+      const accessKeyId = await this.getSystemSettingRaw('s3.accessKeyId');
+      const secretAccessKey = await this.getSystemSettingRaw(
+        's3.secretAccessKey',
+      );
+      const endpoint = await this.getSystemSettingRaw('s3.endpoint');
+
+      if (!bucket || !region || !accessKeyId || !secretAccessKey) {
+        return {
+          success: false,
+          message:
+            'Missing required S3 settings (bucket, region, access key, secret key)',
+        };
+      }
+
+      const { S3Client, HeadBucketCommand } = await import(
+        '@aws-sdk/client-s3'
+      );
+      const client = new S3Client({
+        region,
+        credentials: { accessKeyId, secretAccessKey },
+        ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
+      });
+
+      await client.send(new HeadBucketCommand({ Bucket: bucket }));
+      return {
+        success: true,
+        message: `Successfully connected to bucket "${bucket}"`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'S3 connection failed',
+      };
+    }
+  }
+
+  /** Test SMTP email connectivity */
+  async testEmailConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const host = await this.getSystemSettingRaw('email.smtpHost');
+      const port = await this.getSystemSettingRaw('email.smtpPort');
+      const user = await this.getSystemSettingRaw('email.smtpUser');
+      const pass = await this.getSystemSettingRaw('email.smtpPass');
+      const fromAddress = await this.getSystemSettingRaw('email.fromAddress');
+
+      if (!host || !port) {
+        return {
+          success: false,
+          message: 'Missing required email settings (SMTP host, port)',
+        };
+      }
+
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host,
+        port: parseInt(port, 10),
+        secure: parseInt(port, 10) === 465,
+        auth: user && pass ? { user, pass } : undefined,
+      });
+
+      await transporter.verify();
+
+      // Send test email to support address if configured
+      const supportEmail = await this.getSystemSettingRaw(
+        'general.supportEmail',
+      );
+      if (supportEmail) {
+        await transporter.sendMail({
+          from: fromAddress || user || 'test@example.com',
+          to: supportEmail,
+          subject: 'Vanguard Visitor - Test Email',
+          text: 'This is a test email from Vanguard Visitor settings. If you received this, email is configured correctly.',
+        });
+        return {
+          success: true,
+          message: `SMTP verified and test email sent to ${supportEmail}`,
+        };
+      }
+
+      return { success: true, message: 'SMTP connection verified successfully' };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Email connection test failed',
+      };
+    }
+  }
+
+  /** Test Twilio SMS connectivity */
+  async testSmsConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const accountSid = await this.getSystemSettingRaw('twilio.accountSid');
+      const authToken = await this.getSystemSettingRaw('twilio.authToken');
+      const fromNumber = await this.getSystemSettingRaw('twilio.fromNumber');
+
+      if (!accountSid || !authToken || !fromNumber) {
+        return {
+          success: false,
+          message:
+            'Missing required Twilio settings (Account SID, Auth Token, From Number)',
+        };
+      }
+
+      const twilio = await import('twilio');
+      const client = twilio.default(accountSid, authToken);
+
+      const account = await client.api.accounts(accountSid).fetch();
+      return {
+        success: true,
+        message: `Connected to Twilio account "${account.friendlyName}" (${account.status})`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Twilio connection test failed',
+      };
+    }
+  }
 }
