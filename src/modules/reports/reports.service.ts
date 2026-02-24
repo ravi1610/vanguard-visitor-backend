@@ -457,6 +457,172 @@ export class ReportsService {
     };
   }
 
+  // ── 13. Visitor Time Spent Report ────────────────────────────────
+
+  async getVisitorTimeSpentReport(tenantId: string, dto: ReportQueryDto) {
+    const where: any = { tenantId, checkOutAt: { not: null } };
+    if (dto.from || dto.to) {
+      where.checkInAt = {};
+      if (dto.from) where.checkInAt.gte = new Date(dto.from);
+      if (dto.to) where.checkInAt.lte = new Date(dto.to);
+    }
+    if (dto.search?.trim()) {
+      where.OR = [
+        { visitor: { firstName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+        { visitor: { lastName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+        { visitor: { company: { contains: dto.search.trim(), mode: 'insensitive' } } },
+      ];
+    }
+    const [visits, total] = await Promise.all([
+      this.prisma.visit.findMany({
+        where,
+        include: {
+          visitor: { select: { firstName: true, lastName: true, company: true, phone: true } },
+          hostUser: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: { checkInAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.visit.count({ where }),
+    ]);
+
+    const rows = visits.map((v) => {
+      const checkIn = v.checkInAt ? new Date(v.checkInAt).getTime() : 0;
+      const checkOut = v.checkOutAt ? new Date(v.checkOutAt).getTime() : 0;
+      const durationMs = checkOut - checkIn;
+      const durationMins = Math.round(durationMs / 60_000);
+      const hours = Math.floor(durationMins / 60);
+      const mins = durationMins % 60;
+      return {
+        ...v,
+        durationMinutes: durationMins,
+        durationFormatted: hours > 0 ? `${hours}h ${mins}m` : `${mins}m`,
+      };
+    });
+
+    return { rows, total };
+  }
+
+  // ── 14. Visitor Activity 24h Report ────────────────────────────────
+
+  async getVisitorActivity24hReport(tenantId: string, dto: ReportQueryDto) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const where: any = { tenantId, createdAt: { gte: since } };
+    if (dto.search?.trim()) {
+      where.OR = [
+        { visitor: { firstName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+        { visitor: { lastName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+        { purpose: { contains: dto.search.trim(), mode: 'insensitive' } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.visit.findMany({
+        where,
+        include: {
+          visitor: true,
+          hostUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.visit.count({ where }),
+    ]);
+    return { rows, total };
+  }
+
+  // ── 15. Emergency Contact Export ───────────────────────────────────
+
+  async getEmergencyContactReport(tenantId: string, dto: ReportQueryDto) {
+    const where: any = { tenantId };
+    if (dto.unitId) where.user = { unitId: dto.unitId };
+    if (dto.search?.trim()) {
+      where.OR = [
+        { name: { contains: dto.search.trim(), mode: 'insensitive' } },
+        { phone: { contains: dto.search.trim(), mode: 'insensitive' } },
+        { user: { firstName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+        { user: { lastName: { contains: dto.search.trim(), mode: 'insensitive' } } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.emergencyContact.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true, firstName: true, lastName: true,
+              unit: { select: { unitNumber: true, building: true } },
+            },
+          },
+        },
+        orderBy: [{ user: { lastName: 'asc' } }, { isPrimary: 'desc' }],
+        take: 1000,
+      }),
+      this.prisma.emergencyContact.count({ where }),
+    ]);
+    return { rows, total };
+  }
+
+  // ── 16. Resident Vehicle Directory ─────────────────────────────────
+
+  async getResidentVehicleReport(tenantId: string, dto: ReportQueryDto) {
+    const where: any = { tenantId, ownerType: 'resident' };
+    if (dto.unitId) where.unitId = dto.unitId;
+    if (dto.search?.trim()) {
+      where.OR = [
+        { plateNumber: { contains: dto.search.trim(), mode: 'insensitive' } },
+        { make: { contains: dto.search.trim(), mode: 'insensitive' } },
+        { model: { contains: dto.search.trim(), mode: 'insensitive' } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.vehicle.findMany({
+        where,
+        include: {
+          unit: {
+            select: {
+              unitNumber: true, building: true,
+              residents: { select: { firstName: true, lastName: true }, take: 5 },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.vehicle.count({ where }),
+    ]);
+    return { rows, total };
+  }
+
+  // ── 17. Pet Registry Report ────────────────────────────────────────
+
+  async getPetRegistryReport(tenantId: string, dto: ReportQueryDto) {
+    const where: any = { tenantId };
+    if (dto.extra) where.species = dto.extra; // species filter
+    if (dto.search?.trim()) {
+      where.OR = [
+        { name: { contains: dto.search.trim(), mode: 'insensitive' } },
+        { breed: { contains: dto.search.trim(), mode: 'insensitive' } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.pet.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true, firstName: true, lastName: true,
+              unit: { select: { unitNumber: true, building: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.pet.count({ where }),
+    ]);
+    return { rows, total };
+  }
+
   // ── Dispatch helper for processor ────────────────────────────────
 
   async runReport(
@@ -489,6 +655,16 @@ export class ReportsService {
         return this.getVendorReport(tenantId, dto);
       case 'evacuation':
         return this.getEvacuationReport(tenantId);
+      case 'visitor-time-spent':
+        return this.getVisitorTimeSpentReport(tenantId, dto);
+      case 'visitor-activity-24h':
+        return this.getVisitorActivity24hReport(tenantId, dto);
+      case 'emergency-contacts':
+        return this.getEmergencyContactReport(tenantId, dto);
+      case 'resident-vehicles':
+        return this.getResidentVehicleReport(tenantId, dto);
+      case 'pet-registry':
+        return this.getPetRegistryReport(tenantId, dto);
       default:
         throw new Error(`Unknown report type: ${reportType}`);
     }

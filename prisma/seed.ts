@@ -40,6 +40,7 @@ async function main() {
     'vendors.view',
     'vendors.manage',
     'reports.view',
+    'reports.manage',
     'emergencyContacts.view',
     'emergencyContacts.manage',
     'pets.view',

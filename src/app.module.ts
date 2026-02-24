@@ -31,6 +31,8 @@ import { BolosModule } from './modules/bolos/bolos.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { UnitsModule } from './modules/units/units.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { ReportSchedulesModule } from './modules/report-schedules/report-schedules.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import configuration from './config/configuration';
 
@@ -116,6 +118,8 @@ import configuration from './config/configuration';
     TasksModule,
     UnitsModule,
     SettingsModule,
+    ScheduleModule.forRoot(),
+    ReportSchedulesModule,
   ],
   controllers: [AppController],
   providers: [

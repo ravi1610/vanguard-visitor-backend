@@ -39,6 +39,7 @@ model Tenant {
   bolos              Bolo[]
   units              Unit[]
   tenantSettings     TenantSetting[]
+  reportSchedules    ReportSchedule[]
 
   @@map("tenants")
 }
@@ -130,6 +131,7 @@ model User {
   packagesPickedUpBy   Package[]  @relation("packagePickedUpBy")
   bolosCreated         Bolo[]     @relation("boloCreatedBy")
   bolosResolved        Bolo[]     @relation("boloResolvedBy")
+  reportSchedules      ReportSchedule[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -759,4 +761,31 @@ model TenantSetting {
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("tenant_settings")
+}
+
+// ── Report Schedules ─────────────────────────────────────────────
+
+model ReportSchedule {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  reportType  String   @map("report_type")
+  name        String
+  filters     Json     @default("{}")
+  cronExpr    String   @map("cron_expr")
+  timezone    String   @default("America/New_York")
+  recipients  String[]
+  format      String   @default("pdf")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id")
+  lastRunAt   DateTime? @map("last_run_at")
+  nextRunAt   DateTime? @map("next_run_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([isActive, nextRunAt])
+  @@map("report_schedules")
 }

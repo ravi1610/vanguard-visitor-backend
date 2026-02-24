@@ -79,6 +79,11 @@ export class ReportsController {
       'compliance',
       'vendors',
       'evacuation',
+      'visitor-time-spent',
+      'visitor-activity-24h',
+      'emergency-contacts',
+      'resident-vehicles',
+      'pet-registry',
     ];
     if (!validTypes.includes(reportType)) {
       throw new NotFoundException(`Unknown report type: ${reportType}`);
