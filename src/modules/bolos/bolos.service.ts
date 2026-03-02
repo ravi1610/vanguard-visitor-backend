@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateBoloDto } from './dto/create-bolo.dto';
 import { UpdateBoloDto } from './dto/update-bolo.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const BOLO_SORT_FIELDS = [
   'personName',
@@ -25,10 +26,13 @@ const BOLO_INCLUDE = {
 
 @Injectable()
 export class BolosService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateBoloDto, createdById: string) {
-    return this.prisma.bolo.create({
+    const bolo = await this.prisma.bolo.create({
       data: {
         tenantId,
         personName: dto.personName,
@@ -45,6 +49,26 @@ export class BolosService {
       },
       include: BOLO_INCLUDE,
     });
+
+    // Notify all active security users
+    this.prisma.user.findMany({
+      where: { tenantId, isActive: true, userRoles: { some: { role: { key: 'security' } } } },
+      select: { id: true },
+    }).then((users) => {
+      for (const user of users) {
+        this.notifications.notify({
+          tenantId,
+          eventType: 'bolo.alert',
+          recipientUserId: user.id,
+          data: {
+            personName: dto.personName || 'Unknown',
+            description: dto.description || 'No description',
+          },
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+
+    return bolo;
   }
 
   async findAll(tenantId: string, query: PagedQueryDto, status?: string) {

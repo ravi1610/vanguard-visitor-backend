@@ -3,12 +3,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateMaintenanceDto } from './dto/create-maintenance.dto';
 import { UpdateMaintenanceDto } from './dto/update-maintenance.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const MAINT_SORT_FIELDS = ['title', 'status', 'dueDate', 'createdAt'] as const;
 
 @Injectable()
 export class MaintenanceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateMaintenanceDto) {
     return this.prisma.maintenance.create({
@@ -90,7 +94,7 @@ export class MaintenanceService {
 
   async update(tenantId: string, id: string, dto: UpdateMaintenanceDto) {
     await this.findOne(tenantId, id);
-    return this.prisma.maintenance.update({
+    const updated = await this.prisma.maintenance.update({
       where: { id },
       data: {
         ...(dto.title != null && { title: dto.title }),
@@ -112,6 +116,20 @@ export class MaintenanceService {
         },
       },
     });
+
+    if (dto.status && updated.assignedToUserId) {
+      this.notifications.notify({
+        tenantId,
+        eventType: 'maintenance.update',
+        recipientUserId: updated.assignedToUserId,
+        data: {
+          title: updated.title,
+          status: updated.status,
+        },
+      }).catch(() => {});
+    }
+
+    return updated;
   }
 
   async remove(tenantId: string, id: string) {

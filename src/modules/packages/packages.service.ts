@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const PACKAGE_SORT_FIELDS = [
   'trackingNumber',
@@ -22,10 +23,13 @@ const PACKAGE_INCLUDE = {
 
 @Injectable()
 export class PackagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreatePackageDto) {
-    return this.prisma.package.create({
+    const pkg = await this.prisma.package.create({
       data: {
         tenantId,
         trackingNumber: dto.trackingNumber,
@@ -41,6 +45,20 @@ export class PackagesService {
       },
       include: PACKAGE_INCLUDE,
     });
+
+    if (dto.recipientId) {
+      this.notifications.notify({
+        tenantId,
+        eventType: 'package.received',
+        recipientUserId: dto.recipientId,
+        data: {
+          carrier: dto.carrier || 'Unknown',
+          storageLocation: dto.storageLocation || 'the front desk',
+        },
+      }).catch(() => {});
+    }
+
+    return pkg;
   }
 
   async findAll(tenantId: string, query: PagedQueryDto, status?: string) {

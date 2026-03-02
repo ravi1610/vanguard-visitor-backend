@@ -3,15 +3,19 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateViolationDto } from './dto/create-violation.dto';
 import { UpdateViolationDto } from './dto/update-violation.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const SORT_FIELDS = ['title', 'status', 'issuedDate', 'createdAt'] as const;
 
 @Injectable()
 export class ViolationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   async create(tenantId: string, dto: CreateViolationDto) {
-    return this.prisma.violation.create({
+    const violation = await this.prisma.violation.create({
       data: {
         tenantId,
         userId: dto.userId,
@@ -26,6 +30,20 @@ export class ViolationsService {
         notes: dto.notes,
       },
     });
+
+    if (dto.userId) {
+      this.notifications.notify({
+        tenantId,
+        eventType: 'violation.issued',
+        recipientUserId: dto.userId,
+        data: {
+          title: dto.title,
+          fineAmount: String(dto.fineAmount ?? 0),
+        },
+      }).catch(() => {});
+    }
+
+    return violation;
   }
 
   async findAll(tenantId: string, query: PagedQueryDto, userId?: string, status?: string) {

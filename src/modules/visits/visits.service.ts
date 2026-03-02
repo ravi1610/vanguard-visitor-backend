@@ -15,6 +15,7 @@ import {
   generateQrDataUrl,
   verifyQrToken,
 } from '../../common/utils/qr';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const ACTIVE_VISITS_TTL = 30_000; // 30 seconds
 
@@ -32,6 +33,7 @@ export class VisitsService {
   constructor(
     private prisma: PrismaService,
     @Inject(CACHE_MANAGER) private cache: Cache,
+    private notifications: NotificationsService,
   ) {}
 
   async checkIn(tenantId: string, dto: CheckInDto) {
@@ -58,6 +60,17 @@ export class VisitsService {
 
     // Invalidate active visits cache on check-in
     await this.cache.del(`visits:active:${tenantId}`);
+
+    this.notifications.notify({
+      tenantId,
+      eventType: 'visit.checkin',
+      recipientUserId: dto.hostUserId,
+      data: {
+        visitorName: `${visit.visitor.firstName} ${visit.visitor.lastName}`,
+        location: dto.location || 'the front desk',
+      },
+    }).catch(() => {});
+
     return visit;
   }
 
@@ -82,6 +95,16 @@ export class VisitsService {
       },
       include: VISIT_INCLUDE,
     });
+
+    this.notifications.notify({
+      tenantId,
+      eventType: 'visit.scheduled',
+      recipientUserId: dto.hostUserId,
+      data: {
+        visitorName: `${visit.visitor.firstName} ${visit.visitor.lastName}`,
+        date: dto.scheduledStart || 'TBD',
+      },
+    }).catch(() => {});
 
     // Generate QR code if requested (default true)
     if (dto.generateQr !== false) {
@@ -143,6 +166,17 @@ export class VisitsService {
 
     // Invalidate active visits cache on QR check-in
     await this.cache.del(`visits:active:${tenantId}`);
+
+    this.notifications.notify({
+      tenantId,
+      eventType: 'visit.checkin',
+      recipientUserId: updated.hostUser.id,
+      data: {
+        visitorName: `${updated.visitor.firstName} ${updated.visitor.lastName}`,
+        location: updated.location || 'the front desk',
+      },
+    }).catch(() => {});
+
     return updated;
   }
 
@@ -248,6 +282,7 @@ export class VisitsService {
       where: { id: result.visitId },
       include: {
         visitor: { select: { firstName: true, lastName: true, company: true } },
+        hostUser: { select: { id: true } },
       },
     });
     if (!visit) throw new NotFoundException('Visit not found');
@@ -270,6 +305,18 @@ export class VisitsService {
 
     // Invalidate active visits cache
     await this.cache.del(`visits:active:${visit.tenantId}`);
+
+    if (visit.hostUser) {
+      this.notifications.notify({
+        tenantId: visit.tenantId,
+        eventType: 'visit.checkin',
+        recipientUserId: visit.hostUser.id,
+        data: {
+          visitorName: `${visit.visitor.firstName} ${visit.visitor.lastName}`,
+          location: visit.purpose || 'the front desk',
+        },
+      }).catch(() => {});
+    }
 
     // Return limited public-safe data
     return {
