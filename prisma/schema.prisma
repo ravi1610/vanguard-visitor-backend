@@ -490,8 +490,10 @@ model Document {
 
 enum ComplianceStatus {
   pending
+  in_progress
   completed
   overdue
+  compliant
 }
 
 model ComplianceItem {

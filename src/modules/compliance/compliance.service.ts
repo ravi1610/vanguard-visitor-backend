@@ -26,10 +26,10 @@ export class ComplianceService {
   async findAll(tenantId: string, query: PagedQueryDto, status?: string) {
     const where: {
       tenantId: string;
-      status?: 'pending' | 'completed' | 'overdue';
+      status?: 'pending' | 'in_progress' | 'completed' | 'overdue' | 'compliant';
       OR?: object[];
     } = { tenantId };
-    if (status) where.status = status as 'pending' | 'completed' | 'overdue';
+    if (status) where.status = status as 'pending' | 'in_progress' | 'completed' | 'overdue' | 'compliant';
     const search = query.search?.trim();
     if (search) {
       where.OR = [
