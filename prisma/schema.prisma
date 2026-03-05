@@ -274,7 +274,7 @@ model Staff {
   roleId           String?   @map("role_id")
   photoUrl         String?   @map("photo_url")
   employeeId       String?   @map("employee_id")
-  position         String?
+  positionId       String?   @map("position_id")
   dateOfBirth      DateTime? @map("date_of_birth")
   hireDate         DateTime? @map("hire_date")
   assignedBuilding String?   @map("assigned_building")
@@ -286,6 +286,7 @@ model Staff {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   role   StaffRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  position StaffPosition? @relation(fields: [positionId], references: [id], onDelete: SetNull)
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@map("staff")
@@ -301,6 +302,18 @@ model StaffRole {
   staff Staff[]
 
   @@map("staff_roles")
+}
+
+model StaffPosition {
+  id String @id @default(uuid())
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff Staff[]
+
+  @@map("staff_positions")
 }
 
 enum VehicleOwnerType {

@@ -216,6 +216,33 @@ async function main() {
   }
   console.log(`  ${staffRoleNames.length} staff roles`);
 
+  // ── Staff positions (always seed so app has positions for staff) ──
+  const staffPositionNames = [
+    'Property Manager',
+    'Assistant PM',
+    'Front Desk Admin',
+    'Front Desk User',
+    'Front Gate user',
+    'HOA',
+    'Maintenance Staff',
+    'Maintenance Supervisor',
+    'Property Admin',
+    'System Administrator',
+    'UTG Admin',
+    'Valet',
+  ] as const;
+  const staffPositionIdByName: Record<string, string> = {};
+  for (const name of staffPositionNames) {
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const staffPosition = await prisma.staffPosition.upsert({
+      where: { id: `seed-staffposition-${slug}` },
+      create: { id: `seed-staffposition-${slug}`, name, isActive: true },
+      update: { name, isActive: true },
+    });
+    staffPositionIdByName[name] = staffPosition.id;
+  }
+  console.log(`  ${staffPositionNames.length} staff positions`);
+
   // ── Stop here in production ──────────────────────────────────────
   if (IS_PRODUCTION) {
     console.log('  Production mode — skipping dummy data.');
@@ -236,12 +263,13 @@ async function main() {
   ];
 
   for (const s of staffData) {
-    const { role: roleName, ...staffFields } = s;
+    const { role: roleName, position: positionName, ...staffFields } = s;
     const roleId = staffRoleIdByName[roleName] ?? null;
+    const positionId = staffPositionIdByName[positionName] ?? null;
     await prisma.staff.upsert({
       where: { id: `seed-staff-${s.employeeId}` },
-      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, roleId, ...staffFields },
-      update: { tenantId: tenant.id, roleId, ...staffFields },
+      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, roleId, positionId, ...staffFields },
+      update: { tenantId: tenant.id, roleId, positionId, ...staffFields },
     });
   }
   console.log(`  ${staffData.length} staff members`);

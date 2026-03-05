@@ -15,6 +15,7 @@ import { VisitorsModule } from './modules/visitors/visitors.module';
 import { VisitsModule } from './modules/visits/visits.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { StaffRoleModule } from './modules/staff-role/staff-role.module';
+import { StaffPositionModule } from './modules/staff-position/staff-position.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
@@ -105,6 +106,7 @@ import configuration from './config/configuration';
     VisitsModule,
     StaffModule,
     StaffRoleModule,
+    StaffPositionModule,
     VehiclesModule,
     VendorsModule,
     ComplianceModule,
