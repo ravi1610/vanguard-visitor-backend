@@ -271,7 +271,7 @@ model Staff {
   email            String?
   phone            String?
   department       String?
-  role             String?
+  roleId           String?   @map("role_id")
   photoUrl         String?   @map("photo_url")
   employeeId       String?   @map("employee_id")
   position         String?
@@ -285,10 +285,22 @@ model Staff {
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
+  role   StaffRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@map("staff")
+}
+
+model StaffRole {
+  id String @id @default(uuid())
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff Staff[]
+
+  @@map("staff_roles")
 }
 
 enum VehicleOwnerType {

@@ -203,6 +203,19 @@ async function main() {
   console.log('Seed done. Tenant:', tenant.slug, '| Admin:', user.email, '| Password: admin123');
   console.log(`  ${residents.length} sample residents created (password: resident123)`);
 
+  // ── Staff roles (always seed so app has roles for staff) ───────────
+  const staffRoleNames = ['Manager', 'Officer', 'Supervisor', 'Staff'] as const;
+  const staffRoleIdByName: Record<string, string> = {};
+  for (const name of staffRoleNames) {
+    const staffRole = await prisma.staffRole.upsert({
+      where: { id: `seed-staffrole-${name.toLowerCase()}` },
+      create: { id: `seed-staffrole-${name.toLowerCase()}`, name, isActive: true },
+      update: { name, isActive: true },
+    });
+    staffRoleIdByName[name] = staffRole.id;
+  }
+  console.log(`  ${staffRoleNames.length} staff roles`);
+
   // ── Stop here in production ──────────────────────────────────────
   if (IS_PRODUCTION) {
     console.log('  Production mode — skipping dummy data.');
@@ -223,10 +236,12 @@ async function main() {
   ];
 
   for (const s of staffData) {
+    const { role: roleName, ...staffFields } = s;
+    const roleId = staffRoleIdByName[roleName] ?? null;
     await prisma.staff.upsert({
       where: { id: `seed-staff-${s.employeeId}` },
-      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, ...s },
-      update: { tenantId: tenant.id, ...s },
+      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, roleId, ...staffFields },
+      update: { tenantId: tenant.id, roleId, ...staffFields },
     });
   }
   console.log(`  ${staffData.length} staff members`);
