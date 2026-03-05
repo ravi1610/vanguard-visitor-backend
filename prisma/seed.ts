@@ -243,6 +243,28 @@ async function main() {
   }
   console.log(`  ${staffPositionNames.length} staff positions`);
 
+  // ── Departments (always seed so app has departments for staff) ────
+  const departmentNames = [
+    'Administration',
+    'Maintenance',
+    'Front Desk',
+    'Activities',
+    'Restaurants',
+    'Valet',
+    'Concierge',
+  ] as const;
+  const departmentIdByName: Record<string, string> = {};
+  for (const name of departmentNames) {
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const department = await prisma.department.upsert({
+      where: { id: `seed-department-${slug}` },
+      create: { id: `seed-department-${slug}`, name, isActive: true },
+      update: { name, isActive: true },
+    });
+    departmentIdByName[name] = department.id;
+  }
+  console.log(`  ${departmentNames.length} departments`);
+
   // ── Stop here in production ──────────────────────────────────────
   if (IS_PRODUCTION) {
     console.log('  Production mode — skipping dummy data.');
@@ -263,13 +285,14 @@ async function main() {
   ];
 
   for (const s of staffData) {
-    const { role: roleName, position: positionName, ...staffFields } = s;
+    const { role: roleName, position: positionName, department: departmentName, ...staffFields } = s;
     const roleId = staffRoleIdByName[roleName] ?? null;
     const positionId = staffPositionIdByName[positionName] ?? null;
+    const departmentId = departmentIdByName[departmentName] ?? null;
     await prisma.staff.upsert({
       where: { id: `seed-staff-${s.employeeId}` },
-      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, roleId, positionId, ...staffFields },
-      update: { tenantId: tenant.id, roleId, positionId, ...staffFields },
+      create: { id: `seed-staff-${s.employeeId}`, tenantId: tenant.id, roleId, positionId, departmentId, ...staffFields },
+      update: { tenantId: tenant.id, roleId, positionId, departmentId, ...staffFields },
     });
   }
   console.log(`  ${staffData.length} staff members`);
