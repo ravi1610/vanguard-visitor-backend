@@ -61,10 +61,19 @@ async function main() {
     skipDuplicates: true,
   });
 
-  // ── Tenant ───────────────────────────────────────────────────────
+  // ── Tenant (slug from env when SEED_SUPERADMIN is true) ───────────
+  const seedSuperAdmin = process.env.SEED_SUPERADMIN === 'true';
+  const tenantSlug = seedSuperAdmin
+    ? (process.env.SUPERADMIN_TENANT_SLUG || 'sunset-bay')
+    : 'sunset-bay';
+  const tenantName =
+    tenantSlug
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ') || 'Sunset Bay';
   const tenant = await prisma.tenant.upsert({
-    where: { slug: 'sunset-bay' },
-    create: { name: 'Sunset Bay', slug: 'sunset-bay', isActive: true },
+    where: { slug: tenantSlug },
+    create: { name: tenantName, slug: tenantSlug, isActive: true },
     update: {},
   });
 
@@ -87,22 +96,39 @@ async function main() {
     skipDuplicates: true,
   });
 
-  // ── Admin User ───────────────────────────────────────────────────
-  const email = 'admin@example.com';
-  const passwordHash = await bcrypt.hash('admin123', 10);
+  // ── Admin / Superadmin User (from env when SEED_SUPERADMIN is true) ─
+  const email = seedSuperAdmin
+    ? (process.env.SUPERADMIN_EMAIL || 'admin@vanguardvisitor.com')
+    : 'admin@example.com';
+  const password = seedSuperAdmin
+    ? (process.env.SUPERADMIN_PASSWORD || 'SuperAdmin123!')
+    : 'admin123';
+  const firstName = seedSuperAdmin
+    ? (process.env.SUPERADMIN_FIRST_NAME || 'Super')
+    : 'Admin';
+  const lastName = seedSuperAdmin
+    ? (process.env.SUPERADMIN_LAST_NAME || 'Admin')
+    : 'User';
+  const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email } },
     create: {
       tenantId: tenant.id,
       email,
       passwordHash,
-      firstName: 'Admin',
-      lastName: 'User',
+      firstName,
+      lastName,
       isActive: true,
       isSuperAdmin: true,
       userRoles: { create: { roleId: role.id } },
     },
-    update: { isSuperAdmin: true },
+    update: {
+      passwordHash,
+      firstName,
+      lastName,
+      isActive: true,
+      isSuperAdmin: true,
+    },
     include: { userRoles: { include: { role: true } } },
   });
 
@@ -200,7 +226,13 @@ async function main() {
     residentUsers.push({ id: u.id, firstName: u.firstName, lastName: u.lastName });
   }
 
-  console.log('Seed done. Tenant:', tenant.slug, '| Admin:', user.email, '| Password: admin123');
+  console.log(
+    'Seed done. Tenant:',
+    tenant.slug,
+    '| Admin:',
+    user.email,
+    seedSuperAdmin ? '| Password: (from SUPERADMIN_PASSWORD in .env)' : '| Password: admin123',
+  );
   console.log(`  ${residents.length} sample residents created (password: resident123)`);
 
   // ── Staff roles (always seed so app has roles for staff) ───────────
