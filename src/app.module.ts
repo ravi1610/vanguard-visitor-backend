@@ -37,6 +37,8 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { ReportSchedulesModule } from './modules/report-schedules/report-schedules.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { EmailModule } from './modules/email/email.module';
+import { ResidentModule } from './modules/resident/resident.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import configuration from './config/configuration';
@@ -128,6 +130,8 @@ import configuration from './config/configuration';
     SettingsModule,
     SmsModule,
     NotificationsModule,
+    EmailModule,
+    ResidentModule,
     ScheduleModule.forRoot(),
     ReportSchedulesModule,
   ],
