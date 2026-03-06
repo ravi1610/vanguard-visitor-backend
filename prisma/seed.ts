@@ -235,6 +235,117 @@ async function main() {
   );
   console.log(`  ${residents.length} sample residents created (password: resident123)`);
 
+  // ── Receptionist Role ─────────────────────────────────────────────
+  const receptionistRole = await prisma.role.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: 'receptionist' } },
+    create: {
+      tenantId: tenant.id,
+      name: 'Receptionist',
+      key: 'receptionist',
+      description: 'Front desk / reception staff',
+    },
+    update: {},
+  });
+  const receptionistPermKeys = [
+    'visitor.view',
+    'visitor.manage',
+    'visit.view',
+    'visit.checkin',
+    'visit.checkout',
+    'visit.view_history',
+    'packages.view',
+    'packages.manage',
+    'units.view',
+  ];
+  for (const key of receptionistPermKeys) {
+    const perm = await prisma.permission.findUnique({ where: { key } });
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: receptionistRole.id, permissionId: perm.id } },
+        create: { roleId: receptionistRole.id, permissionId: perm.id },
+        update: {},
+      });
+    }
+  }
+
+  const receptionists = [
+    { email: 'receptionist1@sunsetbay.com', firstName: 'Lisa', lastName: 'Park' },
+    { email: 'receptionist2@sunsetbay.com', firstName: 'Jennifer', lastName: 'Moore' },
+  ];
+  for (const r of receptionists) {
+    const hash = await bcrypt.hash('receptionist123', 10);
+    await prisma.user.upsert({
+      where: { tenantId_email: { tenantId: tenant.id, email: r.email } },
+      create: {
+        tenantId: tenant.id,
+        email: r.email,
+        passwordHash: hash,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        isActive: true,
+        userRoles: { create: { roleId: receptionistRole.id } },
+      },
+      update: { firstName: r.firstName, lastName: r.lastName, isActive: true },
+    });
+  }
+  console.log(`  ${receptionists.length} receptionists created (password: receptionist123)`);
+
+  // ── Security Role ─────────────────────────────────────────────────
+  const securityRole = await prisma.role.upsert({
+    where: { tenantId_key: { tenantId: tenant.id, key: 'security' } },
+    create: {
+      tenantId: tenant.id,
+      name: 'Security',
+      key: 'security',
+      description: 'Security / gate staff',
+    },
+    update: {},
+  });
+  const securityPermKeys = [
+    'visitor.view',
+    'visit.view',
+    'visit.checkin',
+    'visit.checkout',
+    'visit.view_history',
+    'vehicles.view',
+    'vehicles.manage',
+    'bolos.view',
+    'bolos.manage',
+    'units.view',
+  ];
+  for (const key of securityPermKeys) {
+    const perm = await prisma.permission.findUnique({ where: { key } });
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: securityRole.id, permissionId: perm.id } },
+        create: { roleId: securityRole.id, permissionId: perm.id },
+        update: {},
+      });
+    }
+  }
+
+  const securityUsers = [
+    { email: 'security1@sunsetbay.com', firstName: 'Carlos', lastName: 'Mendez' },
+    { email: 'security2@sunsetbay.com', firstName: 'Diana', lastName: 'Reyes' },
+  ];
+  for (const s of securityUsers) {
+    const hash = await bcrypt.hash('security123', 10);
+    await prisma.user.upsert({
+      where: { tenantId_email: { tenantId: tenant.id, email: s.email } },
+      create: {
+        tenantId: tenant.id,
+        email: s.email,
+        passwordHash: hash,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        isActive: true,
+        userRoles: { create: { roleId: securityRole.id } },
+      },
+      update: { firstName: s.firstName, lastName: s.lastName, isActive: true },
+    });
+  }
+  console.log(`  ${securityUsers.length} security users created (password: security123)`);
+
   // ── Staff roles (always seed so app has roles for staff) ───────────
   const staffRoleNames = ['Manager', 'Officer', 'Supervisor', 'Staff'] as const;
   const staffRoleIdByName: Record<string, string> = {};
