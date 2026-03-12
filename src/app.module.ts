@@ -14,6 +14,9 @@ import { UsersModule } from './modules/users/users.module';
 import { VisitorsModule } from './modules/visitors/visitors.module';
 import { VisitsModule } from './modules/visits/visits.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { StaffRoleModule } from './modules/staff-role/staff-role.module';
+import { StaffPositionModule } from './modules/staff-position/staff-position.module';
+import { DepartmentModule } from './modules/department/department.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
@@ -34,6 +37,8 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { ReportSchedulesModule } from './modules/report-schedules/report-schedules.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { EmailModule } from './modules/email/email.module';
+import { ResidentModule } from './modules/resident/resident.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ImportExportModule } from './common/import-export/import-export.module';
@@ -105,6 +110,9 @@ import configuration from './config/configuration';
     VisitorsModule,
     VisitsModule,
     StaffModule,
+    StaffRoleModule,
+    StaffPositionModule,
+    DepartmentModule,
     VehiclesModule,
     VendorsModule,
     ComplianceModule,
@@ -124,6 +132,8 @@ import configuration from './config/configuration';
     SettingsModule,
     SmsModule,
     NotificationsModule,
+    EmailModule,
+    ResidentModule,
     ScheduleModule.forRoot(),
     ReportSchedulesModule,
   ],
