@@ -179,6 +179,23 @@ export class UsersService {
     if (dto.leaseBeginDate !== undefined) data.leaseBeginDate = dto.leaseBeginDate ? new Date(dto.leaseBeginDate) : null;
     if (dto.leaseEndDate !== undefined) data.leaseEndDate = dto.leaseEndDate ? new Date(dto.leaseEndDate) : null;
 
+    if (dto.roleKey != null) {
+      const role = await this.prisma.role.findFirst({
+        where: { tenantId, key: dto.roleKey },
+      });
+      if (!role) throw new NotFoundException(`Role ${dto.roleKey} not found`);
+      await this.prisma.$transaction([
+        this.prisma.user.update({ where: { id }, data }),
+        this.prisma.userRole.deleteMany({ where: { userId: id } }),
+        this.prisma.userRole.create({ data: { userId: id, roleId: role.id } }),
+      ]);
+      const user = await this.prisma.user.findUnique({
+        where: { id },
+        include: { userRoles: { include: { role: true } } },
+      });
+      return this.omitPassword(user!);
+    }
+
     const user = await this.prisma.user.update({
       where: { id },
       data,
