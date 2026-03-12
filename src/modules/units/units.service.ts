@@ -4,6 +4,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const UNIT_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'unitNumber', header: 'Unit Number', required: true },
+  { field: 'building', header: 'Building' },
+  { field: 'floor', header: 'Floor' },
+  { field: 'unitType', header: 'Unit Type' },
+  { field: 'status', header: 'Status' },
+  { field: 'notes', header: 'Notes' },
+];
 
 const UNIT_DETAIL_TTL = 2 * 60 * 1000; // 2 minutes
 
@@ -218,5 +228,35 @@ export class UnitsService {
 
     await this.cache.del(`unit:${tenantId}:${id}`);
     return deleted;
+  }
+
+  /* ─── Import / Export ──────────────────────────────────────────── */
+
+  async exportAll(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    return this.prisma.unit.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.unitNumber || !String(row.unitNumber).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Unit Number' }); continue; }
+        const existing = await this.prisma.unit.findFirst({ where: { tenantId, unitNumber: String(row.unitNumber) } });
+        if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate unit number: ${row.unitNumber}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, unitNumber: String(row.unitNumber ?? '') };
+        if (row.building) data.building = String(row.building);
+        if (row.floor) data.floor = String(row.floor);
+        if (row.unitType) data.unitType = String(row.unitType);
+        if (row.status) data.status = String(row.status);
+        if (row.notes) data.notes = String(row.notes);
+        await this.prisma.unit.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

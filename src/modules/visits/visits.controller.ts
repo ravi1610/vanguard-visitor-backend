@@ -5,12 +5,15 @@ import {
   Param,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { VisitsService } from './visits.service';
+import { VisitsService, VISIT_FIELD_MAPPING } from './visits.service';
 import { CheckInDto } from './dto/checkin.dto';
 import { ScheduleVisitDto } from './dto/schedule-visit.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -20,6 +23,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VisitStatus } from '@prisma/client';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
+import { ImportExportService } from '../../common/import-export/import-export.service';
 
 @ApiTags('Visits')
 @ApiBearerAuth('JWT')
@@ -29,6 +33,7 @@ export class VisitsController {
   constructor(
     private visits: VisitsService,
     private config: ConfigService,
+    private importExport: ImportExportService,
   ) {}
 
   private get qrSecret(): string {
@@ -76,6 +81,36 @@ export class VisitsController {
   @ApiOperation({ summary: 'List currently active (checked-in) visits' })
   findActive(@CurrentUser('tenantId') tenantId: string) {
     return this.visits.findActive(tenantId);
+  }
+
+  /* ─── Export ───────────────────────────────────────────────────── */
+
+  @Get('export')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.view')
+  @ApiOperation({ summary: 'Export visits as XLSX' })
+  @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
+  async exportXlsx(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('ids') ids?: string,
+    @Query('status') status?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const selectedIds = ids ? ids.split(',').map((id) => id.trim()).filter(Boolean) : undefined;
+    const rows = await this.visits.exportAll(tenantId, selectedIds, status);
+    const buffer = this.importExport.buildXlsx(rows as unknown as Record<string, unknown>[], VISIT_FIELD_MAPPING, 'Visits');
+    res?.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="visits-export.xlsx"' });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('export/template')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.view')
+  @ApiOperation({ summary: 'Download visits template (XLSX)' })
+  exportTemplate(@Res({ passthrough: true }) res: Response) {
+    const buffer = this.importExport.buildTemplate(VISIT_FIELD_MAPPING, 'Visits Template');
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="visits-template.xlsx"' });
+    return new StreamableFile(buffer);
   }
 
   @Post('checkin')

@@ -36,6 +36,7 @@ import { SmsModule } from './modules/sms/sms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { ImportExportModule } from './common/import-export/import-export.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -96,6 +97,7 @@ import configuration from './config/configuration';
     }),
 
     PrismaModule,
+    ImportExportModule,
     RbacModule,
     AuthModule,
     TenantsModule,

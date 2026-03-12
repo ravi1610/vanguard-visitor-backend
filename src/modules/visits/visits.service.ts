@@ -16,6 +16,18 @@ import {
   verifyQrToken,
 } from '../../common/utils/qr';
 import { NotificationsService } from '../notifications/notifications.service';
+import type { FieldMapping } from '../../common/import-export/import-export.service';
+
+export const VISIT_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'visitorFirstName', header: 'Visitor First Name' },
+  { field: 'visitorLastName', header: 'Visitor Last Name' },
+  { field: 'visitorEmail', header: 'Visitor Email' },
+  { field: 'purpose', header: 'Purpose' },
+  { field: 'status', header: 'Status' },
+  { field: 'scheduledStart', header: 'Scheduled Start' },
+  { field: 'checkInAt', header: 'Check In' },
+  { field: 'checkOutAt', header: 'Check Out' },
+];
 
 const ACTIVE_VISITS_TTL = 30_000; // 30 seconds
 
@@ -326,5 +338,22 @@ export class VisitsService {
       purpose: visit.purpose,
       checkInAt: now.toISOString(),
     };
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    const visits = await this.prisma.visit.findMany({
+      where,
+      include: { visitor: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return visits.map((v) => ({
+      ...v,
+      visitorFirstName: v.visitor?.firstName ?? '',
+      visitorLastName: v.visitor?.lastName ?? '',
+      visitorEmail: v.visitor?.email ?? '',
+    }));
   }
 }

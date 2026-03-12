@@ -1,8 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseDateSafe } from '../../common/utils/parse-date';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateComplianceItemDto } from './dto/create-compliance.dto';
 import { UpdateComplianceItemDto } from './dto/update-compliance.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const COMPLIANCE_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'name', header: 'Name', required: true },
+  { field: 'dueDate', header: 'Due Date' },
+  { field: 'status', header: 'Status' },
+  { field: 'category', header: 'Category' },
+  { field: 'notes', header: 'Notes' },
+];
 
 const COMPLIANCE_SORT_FIELDS = ['name', 'dueDate', 'status', 'category'] as const;
 
@@ -80,5 +90,34 @@ export class ComplianceService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.complianceItem.delete({ where: { id } });
+  }
+
+  /* ─── Import / Export ──────────────────────────────────────────── */
+
+  async exportAll(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    return this.prisma.complianceItem.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.name || !String(row.name).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Name' }); continue; }
+        const existing = await this.prisma.complianceItem.findFirst({ where: { tenantId, name: String(row.name) } });
+        if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate compliance item: ${row.name}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
+        if (row.dueDate) { const d = parseDateSafe(row.dueDate); if (d) data.dueDate = d; }
+        if (row.status) data.status = String(row.status);
+        if (row.category) data.category = String(row.category);
+        if (row.notes) data.notes = String(row.notes);
+        await this.prisma.complianceItem.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

@@ -3,6 +3,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const VENDOR_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'name', header: 'Name', required: true },
+  { field: 'contactName', header: 'Contact Name' },
+  { field: 'email', header: 'Email' },
+  { field: 'phone', header: 'Phone' },
+  { field: 'category', header: 'Category' },
+  { field: 'notes', header: 'Notes' },
+];
 
 const VENDOR_SORT_FIELDS = ['name', 'contactName', 'email', 'category', 'createdAt'] as const;
 
@@ -77,5 +87,34 @@ export class VendorsService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.vendor.delete({ where: { id } });
+  }
+
+  /* ─── Import / Export ──────────────────────────────────────────── */
+
+  async exportAll(tenantId: string, selectedIds?: string[]) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    return this.prisma.vendor.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.name || !String(row.name).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Name' }); continue; }
+        const existing = await this.prisma.vendor.findFirst({ where: { tenantId, name: String(row.name) } });
+        if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate vendor: ${row.name}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
+        if (row.contactName) data.contactName = String(row.contactName);
+        if (row.email) data.email = String(row.email);
+        if (row.phone) data.phone = String(row.phone);
+        if (row.category) data.category = String(row.category);
+        if (row.notes) data.notes = String(row.notes);
+        await this.prisma.vendor.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

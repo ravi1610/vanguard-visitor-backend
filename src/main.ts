@@ -25,9 +25,20 @@ async function bootstrap() {
     new ValidationPipe({ whitelist: true, transform: true }),
   );
 
-  const allowedOrigins = configService.get<string[]>('cors.origins');
+  const allowedOrigins: string[] =
+    configService.get<string[]>('cors.origins') ?? ['http://localhost:5173', 'http://localhost:4173'];
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      // Allow server-to-server / curl / mobile (no Origin header)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
