@@ -79,15 +79,26 @@ export class StaffService {
         : sortField === 'department'
           ? { department: { name: sortDir } }
           : { [sortField]: sortDir };
-    const [rows, total] = await Promise.all([
+    const [rawRows, total] = await Promise.all([
       this.prisma.staff.findMany({
         where,
         skip,
         take: pageSize,
         orderBy,
+        include: {
+          position: true,
+          department: true,
+          role: true,
+        },
       }),
       this.prisma.staff.count({ where }),
     ]);
+    const rows = rawRows.map((row) => ({
+      ...row,
+      position: row.position?.name ?? null,
+      department: row.department?.name ?? null,
+      role: row.role?.name ?? null,
+    }));
     return { rows, total };
   }
 
