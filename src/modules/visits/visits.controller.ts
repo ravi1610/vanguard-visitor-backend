@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -7,11 +8,15 @@ import {
   Query,
   Res,
   StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { VisitsService, VISIT_FIELD_MAPPING } from './visits.service';
 import { CheckInDto } from './dto/checkin.dto';
@@ -111,6 +116,36 @@ export class VisitsController {
     const buffer = this.importExport.buildTemplate(VISIT_FIELD_MAPPING, 'Visits Template');
     res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="visits-template.xlsx"' });
     return new StreamableFile(buffer);
+  }
+
+  @Post('import')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.checkin')
+  @ApiOperation({ summary: 'Bulk import visits from XLSX file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { const allowed = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']; if (allowed.includes(file.mimetype) || file.originalname.match(/\.xlsx?$/i)) { cb(null, true); } else { cb(new BadRequestException('Only XLSX files are accepted'), false); } } }))
+  async importXlsx(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, VISIT_FIELD_MAPPING);
+    const result = await this.visits.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
+  }
+
+  @Post('import-csv')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.checkin')
+  @ApiOperation({ summary: 'Bulk import visits from CSV file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.match(/\.csv$/i)) { cb(null, true); } else { cb(new BadRequestException('Only CSV files are accepted'), false); } } }))
+  async importCsv(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, VISIT_FIELD_MAPPING);
+    const result = await this.visits.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
   }
 
   @Post('checkin')

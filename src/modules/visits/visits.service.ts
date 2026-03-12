@@ -16,12 +16,13 @@ import {
   verifyQrToken,
 } from '../../common/utils/qr';
 import { NotificationsService } from '../notifications/notifications.service';
-import type { FieldMapping } from '../../common/import-export/import-export.service';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
 
 export const VISIT_FIELD_MAPPING: FieldMapping[] = [
   { field: 'visitorFirstName', header: 'Visitor First Name' },
   { field: 'visitorLastName', header: 'Visitor Last Name' },
   { field: 'visitorEmail', header: 'Visitor Email' },
+  { field: 'hostEmail', header: 'Host Email' },
   { field: 'purpose', header: 'Purpose' },
   { field: 'status', header: 'Status' },
   { field: 'scheduledStart', header: 'Scheduled Start' },
@@ -346,7 +347,7 @@ export class VisitsService {
     if (status) where.status = status;
     const visits = await this.prisma.visit.findMany({
       where,
-      include: { visitor: true },
+      include: { visitor: true, hostUser: { select: { email: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return visits.map((v) => ({
@@ -354,6 +355,55 @@ export class VisitsService {
       visitorFirstName: v.visitor?.firstName ?? '',
       visitorLastName: v.visitor?.lastName ?? '',
       visitorEmail: v.visitor?.email ?? '',
+      hostEmail: (v as any).hostUser?.email ?? '',
     }));
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const firstName = String(row.visitorFirstName ?? '').trim();
+        const lastName = String(row.visitorLastName ?? '').trim();
+        if (!firstName) { result.errors.push({ row: i + 2, message: 'Missing required: Visitor First Name' }); continue; }
+
+        const email = String(row.visitorEmail ?? '').trim() || undefined;
+        // Find or create visitor
+        let visitor = email
+          ? await this.prisma.visitor.findFirst({ where: { tenantId, email } })
+          : await this.prisma.visitor.findFirst({ where: { tenantId, firstName, lastName } });
+        if (!visitor) {
+          visitor = await this.prisma.visitor.create({ data: { tenantId, firstName, lastName, email } });
+        }
+
+        // Resolve host user
+        const hostEmail = String(row.hostEmail ?? '').trim();
+        let hostUserId: string | undefined;
+        if (hostEmail) {
+          const host = await this.prisma.user.findFirst({ where: { tenantId, email: hostEmail } });
+          if (host) hostUserId = host.id;
+        }
+        if (!hostUserId) {
+          // Default to first active admin/manager in tenant
+          const fallback = await this.prisma.user.findFirst({ where: { tenantId, isActive: true }, orderBy: { createdAt: 'asc' } });
+          if (!fallback) { result.errors.push({ row: i + 2, message: 'No host user found in tenant' }); continue; }
+          hostUserId = fallback.id;
+        }
+
+        await this.prisma.visit.create({
+          data: {
+            tenantId,
+            visitorId: visitor.id,
+            hostUserId,
+            purpose: row.purpose ? String(row.purpose) : undefined,
+            status: 'scheduled',
+            scheduledStart: row.scheduledStart ? new Date(String(row.scheduledStart)) : undefined,
+          },
+        });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }
