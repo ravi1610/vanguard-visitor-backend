@@ -6,9 +6,25 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseDateSafe } from '../../common/utils/parse-date';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const USER_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'email', header: 'Email', required: true },
+  { field: 'firstName', header: 'First Name', required: true },
+  { field: 'lastName', header: 'Last Name', required: true },
+  { field: 'phone', header: 'Phone' },
+  { field: 'mobile', header: 'Mobile' },
+  { field: 'residentType', header: 'Resident Type' },
+  { field: 'dateOfBirth', header: 'Date of Birth' },
+  { field: 'leaseBeginDate', header: 'Lease Begin Date' },
+  { field: 'leaseEndDate', header: 'Lease End Date' },
+  { field: 'note', header: 'Note' },
+  { field: 'isActive', header: 'Active' },
+];
 
 @Injectable()
 export class UsersService {
@@ -253,5 +269,54 @@ export class UsersService {
   private omitPassword(user: { passwordHash?: string; [k: string]: unknown }) {
     const { passwordHash: _, ...rest } = user;
     return rest;
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[], isActive?: boolean, isBoardMember?: boolean, roleKey?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (isActive !== undefined) where.isActive = isActive;
+    if (isBoardMember !== undefined) where.isBoardMember = isBoardMember;
+    if (roleKey) where.userRoles = { some: { role: { key: roleKey } } };
+    // Exclude super-admin / admin users by default
+    if (!where.userRoles) where.userRoles = { none: { role: { key: 'admin' } } };
+    const users = await this.prisma.user.findMany({ where, orderBy: { createdAt: 'desc' } });
+    return users.map((u) => this.omitPassword(u));
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const missing: string[] = [];
+        if (!row.email || !String(row.email).trim()) missing.push('Email');
+        if (!row.firstName || !String(row.firstName).trim()) missing.push('First Name');
+        if (!row.lastName || !String(row.lastName).trim()) missing.push('Last Name');
+        if (missing.length) { result.errors.push({ row: i + 2, message: `Missing required: ${missing.join(', ')}` }); continue; }
+        if (row.email) {
+          const existing = await this.prisma.user.findFirst({ where: { tenantId, email: String(row.email) } });
+          if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate email: ${row.email}` }); continue; }
+        }
+        const isActiveRaw = row.isActive !== undefined ? String(row.isActive).toLowerCase() : 'true';
+        const data: Record<string, unknown> = {
+          tenantId,
+          email: String(row.email ?? ''),
+          firstName: String(row.firstName ?? ''),
+          lastName: String(row.lastName ?? ''),
+          passwordHash: await require('bcrypt').hash('changeme123', 10),
+          isActive: isActiveRaw === 'true' || isActiveRaw === '1',
+        };
+        if (row.phone) data.phone = String(row.phone);
+        if (row.mobile) data.mobile = String(row.mobile);
+        if (row.residentType) data.residentType = String(row.residentType);
+        if (row.dateOfBirth) { const d = parseDateSafe(row.dateOfBirth); if (d) data.dateOfBirth = d; }
+        if (row.leaseBeginDate) { const d = parseDateSafe(row.leaseBeginDate); if (d) data.leaseBeginDate = d; }
+        if (row.leaseEndDate) { const d = parseDateSafe(row.leaseEndDate); if (d) data.leaseEndDate = d; }
+        if (row.note) data.note = String(row.note);
+        await this.prisma.user.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

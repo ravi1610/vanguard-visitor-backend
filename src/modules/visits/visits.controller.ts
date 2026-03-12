@@ -1,16 +1,24 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Param,
   Post,
   Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ConfigService } from '@nestjs/config';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { VisitsService } from './visits.service';
+import { VisitsService, VISIT_FIELD_MAPPING } from './visits.service';
 import { CheckInDto } from './dto/checkin.dto';
 import { ScheduleVisitDto } from './dto/schedule-visit.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -20,6 +28,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VisitStatus } from '@prisma/client';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
+import { ImportExportService } from '../../common/import-export/import-export.service';
 
 @ApiTags('Visits')
 @ApiBearerAuth('JWT')
@@ -29,6 +38,7 @@ export class VisitsController {
   constructor(
     private visits: VisitsService,
     private config: ConfigService,
+    private importExport: ImportExportService,
   ) {}
 
   private get qrSecret(): string {
@@ -76,6 +86,66 @@ export class VisitsController {
   @ApiOperation({ summary: 'List currently active (checked-in) visits' })
   findActive(@CurrentUser('tenantId') tenantId: string) {
     return this.visits.findActive(tenantId);
+  }
+
+  /* ─── Export ───────────────────────────────────────────────────── */
+
+  @Get('export')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.view')
+  @ApiOperation({ summary: 'Export visits as XLSX' })
+  @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
+  async exportXlsx(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('ids') ids?: string,
+    @Query('status') status?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const selectedIds = ids ? ids.split(',').map((id) => id.trim()).filter(Boolean) : undefined;
+    const rows = await this.visits.exportAll(tenantId, selectedIds, status);
+    const buffer = this.importExport.buildXlsx(rows as unknown as Record<string, unknown>[], VISIT_FIELD_MAPPING, 'Visits');
+    res?.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="visits-export.xlsx"' });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('export/template')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.view')
+  @ApiOperation({ summary: 'Download visits template (XLSX)' })
+  exportTemplate(@Res({ passthrough: true }) res: Response) {
+    const buffer = this.importExport.buildTemplate(VISIT_FIELD_MAPPING, 'Visits Template');
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="visits-template.xlsx"' });
+    return new StreamableFile(buffer);
+  }
+
+  @Post('import')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.checkin')
+  @ApiOperation({ summary: 'Bulk import visits from XLSX file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { const allowed = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']; if (allowed.includes(file.mimetype) || file.originalname.match(/\.xlsx?$/i)) { cb(null, true); } else { cb(new BadRequestException('Only XLSX files are accepted'), false); } } }))
+  async importXlsx(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, VISIT_FIELD_MAPPING);
+    const result = await this.visits.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
+  }
+
+  @Post('import-csv')
+  @UseGuards(PermissionsGuard)
+  @Permissions('visit.checkin')
+  @ApiOperation({ summary: 'Bulk import visits from CSV file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.match(/\.csv$/i)) { cb(null, true); } else { cb(new BadRequestException('Only CSV files are accepted'), false); } } }))
+  async importCsv(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, VISIT_FIELD_MAPPING);
+    const result = await this.visits.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
   }
 
   @Post('checkin')
