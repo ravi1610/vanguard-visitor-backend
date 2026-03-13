@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
@@ -51,6 +52,7 @@ export class SpacesService {
     const sortField = (query.sortField === 'name' || query.sortField === 'type') ? query.sortField : 'name';
     const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
     const where: { tenantId: string; OR?: object[] } = { tenantId };
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [
@@ -117,6 +119,7 @@ export class SpacesService {
     const where: { tenantId: string; spaceId?: string; assigneeId?: string } = { tenantId };
     if (spaceId) where.spaceId = spaceId;
     if (assigneeId) where.assigneeId = assigneeId;
+    applyFilters(where, query.filters);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const skip = (page - 1) * pageSize;

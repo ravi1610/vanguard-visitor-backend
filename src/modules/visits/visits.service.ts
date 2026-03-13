@@ -7,6 +7,7 @@ import {
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VisitStatus } from '@prisma/client';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CheckInDto } from './dto/checkin.dto';
 import { ScheduleVisitDto } from './dto/schedule-visit.dto';
@@ -237,6 +238,7 @@ export class VisitsService {
     }
     if (options?.status) where.status = options.status;
     if (options?.hostUserId) where.hostUserId = options.hostUserId;
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {

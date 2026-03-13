@@ -6,6 +6,7 @@ import { CreateBoloDto } from './dto/create-bolo.dto';
 import { UpdateBoloDto } from './dto/update-bolo.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 
 export const BOLO_FIELD_MAPPING: FieldMapping[] = [
   { field: 'personName', header: 'Person Name', required: true },
@@ -89,6 +90,8 @@ export class BolosService {
     };
 
     if (status) where.status = status as BoloStatus;
+
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {

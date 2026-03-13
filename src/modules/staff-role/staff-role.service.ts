@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateStaffRoleDto } from './dto/create-staff-role.dto';
 import { UpdateStaffRoleDto } from './dto/update-staff-role.dto';
@@ -28,6 +29,7 @@ export class StaffRoleService {
   async findAll(query: PagedQueryDto, isActive?: boolean) {
     const where: { isActive?: boolean; OR?: object[] } = {};
     if (isActive !== undefined) where.isActive = isActive;
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [{ name: { contains: search, mode: 'insensitive' } }];

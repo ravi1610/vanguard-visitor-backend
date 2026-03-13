@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto';
@@ -42,6 +43,7 @@ export class CalendarService {
       if (from) (where.startAt as Record<string, unknown>).gte = new Date(from);
       if (to) (where.startAt as Record<string, unknown>).lte = new Date(to);
     }
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [

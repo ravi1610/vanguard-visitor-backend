@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdatePetDto } from './dto/update-pet.dto';
@@ -30,6 +31,7 @@ export class PetsService {
   async findAll(tenantId: string, query: PagedQueryDto, userId?: string) {
     const where: Record<string, unknown> = { tenantId };
     if (userId) where.userId = userId;
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [

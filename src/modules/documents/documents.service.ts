@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
@@ -34,6 +35,7 @@ export class DocumentsService {
   async findAll(tenantId: string, query: PagedQueryDto, uploadedByUserId?: string) {
     const where: { tenantId: string; uploadedByUserId?: string; OR?: object[] } = { tenantId };
     if (uploadedByUserId) where.uploadedByUserId = uploadedByUserId;
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [

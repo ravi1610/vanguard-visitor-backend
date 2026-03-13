@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateMaintenanceDto } from './dto/create-maintenance.dto';
 import { UpdateMaintenanceDto } from './dto/update-maintenance.dto';
@@ -56,6 +57,7 @@ export class MaintenanceService {
         | 'completed'
         | 'cancelled';
     if (assignedToUserId) where.assignedToUserId = assignedToUserId;
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [

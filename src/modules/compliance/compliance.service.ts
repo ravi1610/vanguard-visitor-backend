@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateComplianceItemDto } from './dto/create-compliance.dto';
 import { UpdateComplianceItemDto } from './dto/update-compliance.dto';
@@ -40,6 +41,7 @@ export class ComplianceService {
       OR?: object[];
     } = { tenantId };
     if (status) where.status = status as 'pending' | 'in_progress' | 'completed' | 'overdue' | 'compliant';
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 
 const TASK_SORT_FIELDS = ['title', 'status', 'dueDate', 'createdAt'] as const;
@@ -15,6 +16,7 @@ export class TasksService {
       where.status =
         statuses.length === 1 ? statuses[0] : { in: statuses };
     }
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [

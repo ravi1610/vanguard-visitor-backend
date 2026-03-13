@@ -11,6 +11,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+import { applyFilters, containsInsensitive } from '../../common/utils/filter-utils';
 
 export const USER_FIELD_MAPPING: FieldMapping[] = [
   { field: 'email', header: 'Email', required: true },
@@ -90,6 +91,15 @@ export class UsersService {
     if (isBoardMember !== undefined) {
       where.isBoardMember = isBoardMember;
     }
+    applyFilters(where, query.filters, {
+      firstName: containsInsensitive('firstName'),
+      lastName: containsInsensitive('lastName'),
+      email: containsInsensitive('email'),
+      phone: containsInsensitive('phone'),
+      mobile: containsInsensitive('mobile'),
+      residentType: containsInsensitive('residentType'),
+    });
+
     const search = query.search?.trim();
     if (search) {
       where.OR = [

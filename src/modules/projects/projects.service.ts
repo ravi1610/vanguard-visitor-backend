@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -37,6 +38,7 @@ export class ProjectsService {
       OR?: object[];
     } = { tenantId };
     if (status) where.status = status as 'active' | 'completed' | 'on_hold';
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [

@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
+import { applyFilters, containsInsensitive } from '../../common/utils/filter-utils';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
 import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
@@ -50,6 +51,14 @@ export class UnitsService {
   async findAll(tenantId: string, query: PagedQueryDto, status?: string) {
     const where: Record<string, unknown> = { tenantId };
     if (status) where.status = status;
+
+    applyFilters(where, query.filters, {
+      unitNumber: containsInsensitive('unitNumber'),
+      building: containsInsensitive('building'),
+      floor: containsInsensitive('floor'),
+      unitType: containsInsensitive('unitType'),
+      status: containsInsensitive('status'),
+    });
 
     const search = query.search?.trim();
     if (search) {

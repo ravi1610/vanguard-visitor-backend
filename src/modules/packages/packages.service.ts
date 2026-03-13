@@ -5,6 +5,7 @@ import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+import { applyFilters, containsInsensitive } from '../../common/utils/filter-utils';
 
 export const PACKAGE_FIELD_MAPPING: FieldMapping[] = [
   { field: 'trackingNumber', header: 'Tracking Number', required: true },
@@ -75,6 +76,16 @@ export class PackagesService {
     const where: { tenantId: string; status?: any; OR?: object[] } = { tenantId };
 
     if (status) where.status = status;
+
+    applyFilters(where, query.filters, {
+      trackingNumber: containsInsensitive('trackingNumber'),
+      carrier: containsInsensitive('carrier'),
+      recipientName: containsInsensitive('recipientName'),
+      size: containsInsensitive('size'),
+      storageLocation: containsInsensitive('storageLocation'),
+      description: containsInsensitive('description'),
+      status: containsInsensitive('status'),
+    });
 
     const search = query.search?.trim();
     if (search) {
