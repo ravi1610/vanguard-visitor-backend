@@ -12,6 +12,51 @@ import { JwtPayload } from '../decorators/current-user.decorator';
 export class PermissionsGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
+  private pickActionFromRequest(method: string, path: string): string {
+    const lowerPath = path.toLowerCase();
+    if (lowerPath.includes('/import')) return 'import';
+    if (lowerPath.includes('/export')) return 'export';
+    if (method === 'POST') return 'create';
+    if (method === 'PATCH' || method === 'PUT') return 'update';
+    if (method === 'DELETE') return 'delete';
+    return 'read';
+  }
+
+  private hasPermission(
+    granted: Set<string>,
+    required: string,
+    method: string,
+    path: string,
+  ): boolean {
+    if (granted.has(required)) return true;
+
+    const [moduleKey, action] = required.split('.');
+    if (!moduleKey || !action) return false;
+
+    if (action === 'view') {
+      return granted.has(`${moduleKey}.read`);
+    }
+
+    if (action === 'manage') {
+      const reqAction = this.pickActionFromRequest(method, path);
+      return granted.has(`${moduleKey}.${reqAction}`) || granted.has(`${moduleKey}.manage`);
+    }
+
+    if (required === 'visit.checkin') {
+      return granted.has('visit.create') || granted.has('visit.update');
+    }
+
+    if (required === 'visit.checkout') {
+      return granted.has('visit.update');
+    }
+
+    if (required === 'visit.view_history') {
+      return granted.has('visit.read');
+    }
+
+    return false;
+  }
+
   canActivate(context: ExecutionContext): boolean {
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_KEY,
@@ -21,12 +66,16 @@ export class PermissionsGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
     const payload = user as JwtPayload;
+    const req = context.switchToHttp().getRequest();
+    const method = String(req?.method ?? 'GET').toUpperCase();
+    const path = String(req?.route?.path ?? req?.url ?? '');
+    const granted = new Set(payload?.permissions ?? []);
 
     // Superadmins bypass all permission checks
     if (payload?.isSuperAdmin) return true;
 
     const hasAll = requiredPermissions.every((perm) =>
-      payload?.permissions?.includes(perm),
+      this.hasPermission(granted, perm, method, path),
     );
     if (!hasAll) {
       throw new ForbiddenException('Insufficient permissions');

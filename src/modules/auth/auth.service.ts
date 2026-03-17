@@ -26,6 +26,11 @@ const USER_WITH_ROLES_INCLUDE = {
       },
     },
   },
+  userPermissions: {
+    include: {
+      permission: true,
+    },
+  },
 } as const;
 
 /** TTL for JWT active-status cache (5 minutes) */
@@ -59,10 +64,15 @@ export class AuthService implements OnModuleInit {
     isSuperAdmin: boolean;
     tenant: { name: string } | null;
     userRoles: { role: { key: string; rolePermissions: { permission: { key: string } }[] } }[];
+    userPermissions: {
+      effect: 'allow' | 'deny';
+      permission: { key: string };
+    }[];
   }) {
     const roles = user.userRoles.map((ur) => ur.role.key);
-    const permissions = this.rbac.getPermissionsFromRoles(
+    const { effective } = this.rbac.getEffectivePermissions(
       user.userRoles.map((ur) => ur.role),
+      user.userPermissions,
     );
     return {
       id: user.id,
@@ -73,7 +83,7 @@ export class AuthService implements OnModuleInit {
       lastName: user.lastName,
       isSuperAdmin: user.isSuperAdmin,
       roles,
-      permissions,
+      permissions: effective,
     };
   }
 

@@ -119,6 +119,7 @@ model User {
   tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit                 Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
   userRoles            UserRole[]
+  userPermissions      UserPermission[]
   refreshTokens        RefreshToken[]
   hostedVisits         Visit[]        @relation("HostUser")
   maintenanceAssigned  Maintenance[]
@@ -167,8 +168,14 @@ model Permission {
   createdAt   DateTime @default(now()) @map("created_at")
 
   rolePermissions RolePermission[]
+  userPermissions UserPermission[]
 
   @@map("permissions")
+}
+
+enum UserPermissionEffect {
+  allow
+  deny
 }
 
 model RolePermission {
@@ -191,6 +198,19 @@ model UserRole {
 
   @@id([userId, roleId])
   @@map("user_roles")
+}
+
+model UserPermission {
+  userId       String               @map("user_id")
+  permissionId String               @map("permission_id")
+  effect       UserPermissionEffect @default(allow)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+  @@index([permissionId])
+  @@map("user_permissions")
 }
 
 model RefreshToken {
