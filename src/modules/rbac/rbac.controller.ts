@@ -1,13 +1,15 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { IsArray, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsNotEmpty, IsString } from 'class-validator';
 import { RbacService } from './rbac.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -30,6 +32,34 @@ class UpdateUserOverridesDto {
   denies!: string[];
 }
 
+class CreateRoleDto {
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  key!: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string | null;
+}
+
+class UpdateRoleDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  key?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string | null;
+}
+
 @ApiTags('Roles')
 @ApiBearerAuth('JWT')
 @Controller('roles')
@@ -43,6 +73,34 @@ export class RbacController {
   @ApiOperation({ summary: 'List all roles for current tenant' })
   getRoles(@CurrentUser('tenantId') tenantId: string) {
     return this.rbac.getRolesForTenant(tenantId);
+  }
+
+  @Post()
+  @UseGuards(PermissionsGuard)
+  @Permissions('user.manage')
+  @ApiOperation({ summary: 'Create a custom role' })
+  createRole(@CurrentUser('tenantId') tenantId: string, @Body() dto: CreateRoleDto) {
+    return this.rbac.createRole(tenantId, dto);
+  }
+
+  @Patch(':roleId')
+  @UseGuards(PermissionsGuard)
+  @Permissions('user.manage')
+  @ApiOperation({ summary: 'Update role metadata' })
+  updateRole(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    return this.rbac.updateRole(tenantId, roleId, dto);
+  }
+
+  @Delete(':roleId')
+  @UseGuards(PermissionsGuard)
+  @Permissions('user.manage')
+  @ApiOperation({ summary: 'Delete a role' })
+  deleteRole(@CurrentUser('tenantId') tenantId: string, @Param('roleId') roleId: string) {
+    return this.rbac.deleteRole(tenantId, roleId);
   }
 
   @Get('permissions-catalog')

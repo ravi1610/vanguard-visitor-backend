@@ -148,6 +148,14 @@ const DEFAULT_ROLES: Record<
   },
 };
 
+function normalizeRoleKey(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 @Injectable()
 export class RbacService {
   constructor(
@@ -182,6 +190,19 @@ export class RbacService {
     }
 
     return Array.from(expanded);
+  }
+
+  private async ensureUniqueRoleKey(tenantId: string, key: string, excludeRoleId?: string) {
+    const existing = await this.prisma.role.findFirst({
+      where: {
+        tenantId,
+        key,
+        ...(excludeRoleId ? { NOT: { id: excludeRoleId } } : {}),
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Role key already exists');
+    }
   }
 
   getPermissionsFromRoles(roles: { rolePermissions: { permission: { key: string } }[] }[]): string[] {
@@ -325,6 +346,68 @@ export class RbacService {
       const batch = tenants.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map((t) => this.seedDefaultRolesForTenant(t.id)));
     }
+  }
+
+  async createRole(tenantId: string, dto: { name: string; key: string; description?: string | null }) {
+    const trimmedName = dto.name?.trim() ?? '';
+    if (!trimmedName) throw new BadRequestException('Role name is required');
+    const normalizedKey = normalizeRoleKey(dto.key ?? '');
+    if (!normalizedKey) throw new BadRequestException('Role key is required');
+    await this.ensureUniqueRoleKey(tenantId, normalizedKey);
+    const role = await this.prisma.role.create({
+      data: {
+        tenantId,
+        name: trimmedName,
+        key: normalizedKey,
+        description: dto.description?.trim() || null,
+      },
+    });
+    await this.cache.del(`rbac:roles:${tenantId}`);
+    return role;
+  }
+
+  async updateRole(
+    tenantId: string,
+    roleId: string,
+    dto: { name?: string; key?: string; description?: string | null },
+  ) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+    const updates: { name?: string; key?: string; description?: string | null } = {};
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (!trimmed) throw new BadRequestException('Role name cannot be empty');
+      updates.name = trimmed;
+    }
+    if (dto.description !== undefined) {
+      const desc = dto.description?.trim() ?? '';
+      updates.description = desc || null;
+    }
+    if (dto.key !== undefined) {
+      const normalizedKey = normalizeRoleKey(dto.key);
+      if (!normalizedKey) throw new BadRequestException('Role key is required');
+      await this.ensureUniqueRoleKey(tenantId, normalizedKey, role.id);
+      updates.key = normalizedKey;
+    }
+    if (!Object.keys(updates).length) {
+      return role;
+    }
+    const updated = await this.prisma.role.update({
+      where: { id: roleId },
+      data: updates,
+    });
+    await this.cache.del(`rbac:roles:${tenantId}`);
+    return updated;
+  }
+
+  async deleteRole(tenantId: string, roleId: string) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.key === 'tenant_owner') {
+      throw new BadRequestException('System role cannot be deleted');
+    }
+    await this.prisma.role.delete({ where: { id: roleId } });
+    await this.cache.del(`rbac:roles:${tenantId}`);
   }
 
   async getRolesForTenant(tenantId: string) {
