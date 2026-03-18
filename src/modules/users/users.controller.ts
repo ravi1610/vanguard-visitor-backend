@@ -33,6 +33,7 @@ export class UsersController {
   @ApiQuery({ name: 'isActive', required: false, description: 'Filter by active status (true/false)' })
   @ApiQuery({ name: 'isBoardMember', required: false, description: 'Filter by board member status (true/false)' })
   findAll(
+    @CurrentUser('roles') requesterRoles: string[],
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: PagedQueryDto,
     @Query('roleKey') roleKey?: string,
@@ -40,7 +41,10 @@ export class UsersController {
     @Query('isBoardMember') isBoardMember?: string,
   ) {
     return this.users.findAll(
-      tenantId, roleKey, query,
+      tenantId,
+      requesterRoles,
+      roleKey,
+      query,
       isActive === 'true' ? true : isActive === 'false' ? false : undefined,
       isBoardMember === 'true' ? true : isBoardMember === 'false' ? false : undefined,
     );

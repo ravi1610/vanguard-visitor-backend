@@ -80,7 +80,14 @@ export class UsersService {
     return this.omitPassword(user);
   }
 
-  async findAll(tenantId: string, roleKey: string | undefined, query: PagedQueryDto, isActive?: boolean, isBoardMember?: boolean) {
+  async findAll(
+    tenantId: string,
+    requesterRoles: string[] | undefined,
+    roleKey: string | undefined,
+    query: PagedQueryDto,
+    isActive?: boolean,
+    isBoardMember?: boolean,
+  ) {
     const where: Record<string, unknown> = { tenantId };
     if (roleKey) {
       where.userRoles = { some: { role: { key: roleKey } } };
@@ -90,6 +97,14 @@ export class UsersService {
     }
     if (isBoardMember !== undefined) {
       where.isBoardMember = isBoardMember;
+    }
+    const isTenantOwner = (requesterRoles ?? []).includes('tenant_owner');
+    if (!isTenantOwner) {
+      where.isSuperAdmin = false;
+      where.AND = [
+        ...(Array.isArray(where.AND) ? (where.AND as Record<string, unknown>[]) : []),
+        { userRoles: { none: { role: { key: 'tenant_owner' } } } },
+      ];
     }
     applyFilters(where, query.filters, {
       firstName: containsInsensitive('firstName'),
