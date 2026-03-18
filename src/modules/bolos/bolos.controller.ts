@@ -65,7 +65,7 @@ export class BolosController {
 
   @Get('export')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.view')
+  @Permissions('bolos.export')
   @ApiOperation({ summary: 'Export BOLOs as XLSX' })
   @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
   async exportXlsx(
@@ -83,7 +83,7 @@ export class BolosController {
 
   @Get('export/template')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.import')
   @ApiOperation({ summary: 'Download BOLOs import template (XLSX)' })
   exportTemplate(@Res({ passthrough: true }) res: Response) {
     const buffer = this.importExport.buildTemplate(BOLO_FIELD_MAPPING, 'BOLOs Template');
@@ -93,7 +93,7 @@ export class BolosController {
 
   @Post('import')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.import')
   @ApiOperation({ summary: 'Bulk import BOLOs from XLSX file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
@@ -108,7 +108,7 @@ export class BolosController {
 
   @Post('import-csv')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.import')
   @ApiOperation({ summary: 'Bulk import BOLOs from CSV file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
@@ -134,7 +134,7 @@ export class BolosController {
 
   @Post()
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.create')
   @ApiOperation({ summary: 'Create a new BOLO alert' })
   create(
     @CurrentUser('tenantId') tenantId: string,
@@ -146,7 +146,7 @@ export class BolosController {
 
   @Patch(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Update a BOLO alert' })
   update(
     @CurrentUser('tenantId') tenantId: string,
@@ -158,7 +158,7 @@ export class BolosController {
 
   @Post(':id/resolve')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Mark a BOLO alert as resolved' })
   resolve(
     @CurrentUser('tenantId') tenantId: string,
@@ -170,7 +170,7 @@ export class BolosController {
 
   @Post(':id/photo')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Upload BOLO photo' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -220,7 +220,7 @@ export class BolosController {
 
   @Delete(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.delete')
   @ApiOperation({ summary: 'Delete a BOLO alert' })
   remove(
     @CurrentUser('tenantId') tenantId: string,

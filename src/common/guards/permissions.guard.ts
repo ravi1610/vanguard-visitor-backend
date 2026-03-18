@@ -28,17 +28,24 @@ export class PermissionsGuard implements CanActivate {
     method: string,
     path: string,
   ): boolean {
+    const reqAction = this.pickActionFromRequest(method, path);
+
     if (granted.has(required)) return true;
 
     const [moduleKey, action] = required.split('.');
     if (!moduleKey || !action) return false;
 
     if (action === 'view') {
+      if (reqAction === 'export') {
+        return granted.has(`${moduleKey}.export`);
+      }
+      if (reqAction === 'import') {
+        return granted.has(`${moduleKey}.import`);
+      }
       return granted.has(`${moduleKey}.read`);
     }
 
     if (action === 'manage') {
-      const reqAction = this.pickActionFromRequest(method, path);
       return granted.has(`${moduleKey}.${reqAction}`) || granted.has(`${moduleKey}.manage`);
     }
 

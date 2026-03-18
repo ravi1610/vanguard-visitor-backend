@@ -55,7 +55,7 @@ export class CalendarController {
 
   @Get('export')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.view')
+  @Permissions('calendar.export')
   @ApiOperation({ summary: 'Export calendar events as XLSX' })
   @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
   async exportXlsx(
@@ -72,7 +72,7 @@ export class CalendarController {
 
   @Get('export/template')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.import')
   @ApiOperation({ summary: 'Download calendar import template (XLSX)' })
   exportTemplate(@Res({ passthrough: true }) res: Response) {
     const buffer = this.importExport.buildTemplate(CALENDAR_FIELD_MAPPING, 'Calendar Template');
@@ -82,7 +82,7 @@ export class CalendarController {
 
   @Post('import')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.import')
   @ApiOperation({ summary: 'Bulk import events from XLSX file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
@@ -97,7 +97,7 @@ export class CalendarController {
 
   @Post('import-csv')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.import')
   @ApiOperation({ summary: 'Bulk import events from CSV file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
@@ -120,7 +120,7 @@ export class CalendarController {
 
   @Post()
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.create')
   @ApiOperation({ summary: 'Create a new calendar event' })
   create(
     @CurrentUser('tenantId') tenantId: string,
@@ -131,7 +131,7 @@ export class CalendarController {
 
   @Patch(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.update')
   @ApiOperation({ summary: 'Update a calendar event' })
   update(
     @CurrentUser('tenantId') tenantId: string,
@@ -143,7 +143,7 @@ export class CalendarController {
 
   @Delete(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('calendar.manage')
+  @Permissions('calendar.delete')
   @ApiOperation({ summary: 'Delete a calendar event' })
   remove(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string) {
     return this.calendar.remove(tenantId, id);
