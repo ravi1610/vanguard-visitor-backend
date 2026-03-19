@@ -24,6 +24,8 @@ RUN npm prune --omit=dev
 # Stage 2: Lean production image (no npm install, no network needed)
 FROM node:20-alpine
 
+RUN apk add --no-cache bash
+
 WORKDIR /app
 
 # Copy only what's needed for production
