@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+  const isProduction = process.env.NODE_ENV === 'production';
 
   // Graceful shutdown — let Prisma disconnect cleanly on SIGTERM/SIGINT
   app.enableShutdownHooks();
@@ -27,13 +28,16 @@ async function bootstrap() {
 
   const allowedOrigins: string[] =
     configService.get<string[]>('cors.origins') ?? ['http://localhost:5173', 'http://localhost:4173'];
+  const isLocalhostOrigin = (origin: string) =>
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
   app.enableCors({
     origin: (
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
       // Allow server-to-server / curl / mobile (no Origin header)
-      if (!origin || allowedOrigins.includes(origin)) {
+      const allowByDevLocalhost = !isProduction && isLocalhostOrigin(origin ?? '');
+      if (!origin || allowedOrigins.includes(origin) || allowByDevLocalhost) {
         callback(null, true);
       } else {
         callback(null, false);
