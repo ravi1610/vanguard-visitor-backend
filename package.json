@@ -13,6 +13,7 @@
     "prisma:push": "prisma db push --config ./prisma/prisma.config.ts",
     "prisma:studio": "prisma studio --config ./prisma/prisma.config.ts",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed:prod": "node prisma/seed.js",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "concurrently -k -n TSC,NODE -c yellow,cyan \"npm run dev:build\" \"npm run dev:run\"",
