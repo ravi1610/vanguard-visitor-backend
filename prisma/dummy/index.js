@@ -1,0 +1,47 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedUnits = exports.getDummySeedCounts = void 0;
+exports.runDummySeed = runDummySeed;
+const residents_seeder_1 = require("./residents-seeder");
+const staff_seeder_1 = require("./staff-seeder");
+const visitors_seeder_1 = require("./visitors-seeder");
+const visits_seeder_1 = require("./visits-seeder");
+const vehicles_seeder_1 = require("./vehicles-seeder");
+const projects_tasks_seeder_1 = require("./projects-tasks-seeder");
+const calendar_events_seeder_1 = require("./calendar-events-seeder");
+const documents_seeder_1 = require("./documents-seeder");
+const compliance_seeder_1 = require("./compliance-seeder");
+const vendors_seeder_1 = require("./vendors-seeder");
+const spaces_assignments_seeder_1 = require("./spaces-assignments-seeder");
+const violations_seeder_1 = require("./violations-seeder");
+const packages_seeder_1 = require("./packages-seeder");
+const bolos_seeder_1 = require("./bolos-seeder");
+const emergency_contacts_seeder_1 = require("./emergency-contacts-seeder");
+const pets_seeder_1 = require("./pets-seeder");
+const maintenance_seeder_1 = require("./maintenance-seeder");
+var context_1 = require("./context");
+Object.defineProperty(exports, "getDummySeedCounts", { enumerable: true, get: function () { return context_1.getDummySeedCounts; } });
+var units_seeder_1 = require("./units-seeder");
+Object.defineProperty(exports, "seedUnits", { enumerable: true, get: function () { return units_seeder_1.seedUnits; } });
+async function runDummySeed(prisma, ctx) {
+    const residentUsers = await (0, residents_seeder_1.seedResidents)(prisma, ctx);
+    const ctxWithResidents = { ...ctx, residentUsers };
+    await (0, staff_seeder_1.seedStaff)(prisma, ctxWithResidents);
+    const visitorIds = await (0, visitors_seeder_1.seedVisitors)(prisma, ctxWithResidents);
+    await (0, visits_seeder_1.seedVisits)(prisma, { ...ctxWithResidents, visitorIds });
+    await (0, vehicles_seeder_1.seedVehicles)(prisma, ctxWithResidents);
+    await (0, projects_tasks_seeder_1.seedProjectsAndTasks)(prisma, ctxWithResidents);
+    await (0, calendar_events_seeder_1.seedCalendarEvents)(prisma, ctxWithResidents);
+    await (0, documents_seeder_1.seedDocuments)(prisma, ctxWithResidents);
+    await (0, compliance_seeder_1.seedComplianceItems)(prisma, ctxWithResidents);
+    await (0, vendors_seeder_1.seedVendors)(prisma, ctxWithResidents);
+    await (0, spaces_assignments_seeder_1.seedSpacesAndAssignments)(prisma, ctxWithResidents);
+    await (0, violations_seeder_1.seedViolations)(prisma, ctxWithResidents);
+    await (0, packages_seeder_1.seedPackages)(prisma, ctxWithResidents);
+    await (0, bolos_seeder_1.seedBolos)(prisma, ctxWithResidents);
+    await (0, emergency_contacts_seeder_1.seedEmergencyContacts)(prisma, ctxWithResidents);
+    await (0, pets_seeder_1.seedPets)(prisma, ctxWithResidents);
+    await (0, maintenance_seeder_1.seedMaintenance)(prisma, ctxWithResidents);
+    console.log('  Dummy data seeding complete!');
+}
+//# sourceMappingURL=index.js.map
