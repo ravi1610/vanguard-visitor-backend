@@ -21,10 +21,14 @@ async function seedUnits(prisma, tenantId, count) {
         };
     });
     await (0, helpers_1.createManyBatched)((chunk) => prisma.unit.createMany({ data: chunk, skipDuplicates: true }), data);
+    const dbUnits = await prisma.unit.findMany({
+        where: { tenantId, unitNumber: { in: unitNumbers } },
+        select: { id: true, unitNumber: true },
+    });
     const unitMap = {};
-    for (let i = 0; i < count; i++)
-        unitMap[unitNumbers[i]] = `seed-unit-${unitNumbers[i]}`;
-    console.log(`  ${count} units`);
+    for (const u of dbUnits)
+        unitMap[u.unitNumber] = u.id;
+    console.log(`  ${dbUnits.length} units`);
     return unitMap;
 }
 //# sourceMappingURL=units-seeder.js.map

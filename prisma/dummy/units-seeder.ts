@@ -31,8 +31,13 @@ export async function seedUnits(
 
   await createManyBatched((chunk) => prisma.unit.createMany({ data: chunk, skipDuplicates: true }), data);
 
+  // Query actual unit IDs from DB (in case skipDuplicates skipped rows with different IDs)
+  const dbUnits = await prisma.unit.findMany({
+    where: { tenantId, unitNumber: { in: unitNumbers } },
+    select: { id: true, unitNumber: true },
+  });
   const unitMap: Record<string, string> = {};
-  for (let i = 0; i < count; i++) unitMap[unitNumbers[i]] = `seed-unit-${unitNumbers[i]}`;
-  console.log(`  ${count} units`);
+  for (const u of dbUnits) unitMap[u.unitNumber] = u.id;
+  console.log(`  ${dbUnits.length} units`);
   return unitMap;
 }
