@@ -1,8 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const DOCUMENT_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'name', header: 'Name', required: true },
+  { field: 'documentType', header: 'Document Type' },
+  { field: 'category', header: 'Category' },
+  { field: 'fileUrl', header: 'File URL' },
+];
 
 const DOC_SORT_FIELDS = ['name', 'documentType', 'category', 'createdAt'] as const;
 
@@ -26,6 +35,7 @@ export class DocumentsService {
   async findAll(tenantId: string, query: PagedQueryDto, uploadedByUserId?: string) {
     const where: { tenantId: string; uploadedByUserId?: string; OR?: object[] } = { tenantId };
     if (uploadedByUserId) where.uploadedByUserId = uploadedByUserId;
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [
@@ -78,5 +88,31 @@ export class DocumentsService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.document.delete({ where: { id } });
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[]) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    return this.prisma.document.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[], userId?: string): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.name || !String(row.name).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Name' }); continue; }
+        const existing = await this.prisma.document.findFirst({ where: { tenantId, name: String(row.name) } });
+        if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate document: ${row.name}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
+        if (row.documentType) data.documentType = String(row.documentType);
+        if (row.category) data.category = String(row.category);
+        if (row.fileUrl) data.fileUrl = String(row.fileUrl);
+        if (userId) data.uploadedByUserId = userId;
+        await this.prisma.document.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

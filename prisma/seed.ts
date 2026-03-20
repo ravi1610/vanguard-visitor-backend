@@ -156,12 +156,6 @@ async function main() {
     }
   }
 
-  // ── Units (from dummy/units-seeder; at least 5 for residents) ─────
-  const seedCounts = getDummySeedCounts();
-  const unitMap = await seedUnits(prisma, tenant.id, seedCounts.units);
-
-  const residentUsers: { id: string; firstName: string; lastName: string }[] = [];
-
   console.log(
     'Seed done. Tenant:',
     tenant.slug,
@@ -355,11 +349,13 @@ async function main() {
   }
 
   console.log('  Seeding dummy data for development...');
+  const seedCounts = getDummySeedCounts();
+  const unitMap = await seedUnits(prisma, tenant.id, seedCounts.units);
   await runDummySeed(prisma, {
     tenantId: tenant.id,
     counts: seedCounts,
     unitMap,
-    residentUsers,
+    residentUsers: [],
     adminUserId: user.id,
     residentRoleId: residentRole.id,
     staffRoleIdByName,

@@ -5,6 +5,19 @@ import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateBoloDto } from './dto/create-bolo.dto';
 import { UpdateBoloDto } from './dto/update-bolo.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
+
+export const BOLO_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'personName', header: 'Person Name', required: true },
+  { field: 'description', header: 'Description' },
+  { field: 'vehicleMake', header: 'Vehicle Make' },
+  { field: 'vehicleModel', header: 'Vehicle Model' },
+  { field: 'vehicleColor', header: 'Vehicle Color' },
+  { field: 'licensePlate', header: 'License Plate' },
+  { field: 'priority', header: 'Priority' },
+  { field: 'notes', header: 'Notes' },
+];
 
 const BOLO_SORT_FIELDS = [
   'personName',
@@ -77,6 +90,8 @@ export class BolosService {
     };
 
     if (status) where.status = status as BoloStatus;
+
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {
@@ -180,5 +195,33 @@ export class BolosService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.bolo.delete({ where: { id } });
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    return this.prisma.bolo.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.personName || !String(row.personName).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Person Name' }); continue; }
+        const data: Record<string, unknown> = { tenantId, personName: String(row.personName ?? '') };
+        if (row.description) data.description = String(row.description);
+        if (row.vehicleMake) data.vehicleMake = String(row.vehicleMake);
+        if (row.vehicleModel) data.vehicleModel = String(row.vehicleModel);
+        if (row.vehicleColor) data.vehicleColor = String(row.vehicleColor);
+        if (row.licensePlate) data.licensePlate = String(row.licensePlate);
+        if (row.priority) data.priority = String(row.priority);
+        if (row.notes) data.notes = String(row.notes);
+        await this.prisma.bolo.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

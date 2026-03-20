@@ -1,9 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateMaintenanceDto } from './dto/create-maintenance.dto';
 import { UpdateMaintenanceDto } from './dto/update-maintenance.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const MAINTENANCE_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'title', header: 'Title', required: true },
+  { field: 'description', header: 'Description' },
+  { field: 'status', header: 'Status' },
+  { field: 'dueDate', header: 'Due Date' },
+];
 
 const MAINT_SORT_FIELDS = ['title', 'status', 'dueDate', 'createdAt'] as const;
 
@@ -47,6 +57,7 @@ export class MaintenanceService {
         | 'completed'
         | 'cancelled';
     if (assignedToUserId) where.assignedToUserId = assignedToUserId;
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [
@@ -135,5 +146,29 @@ export class MaintenanceService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.maintenance.delete({ where: { id } });
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    return this.prisma.maintenance.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.title || !String(row.title).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Title' }); continue; }
+        const data: Record<string, unknown> = { tenantId, title: String(row.title ?? '') };
+        if (row.description) data.description = String(row.description);
+        if (row.status) data.status = String(row.status);
+        if (row.dueDate) { const d = parseDateSafe(row.dueDate); if (d) data.dueDate = d; }
+        await this.prisma.maintenance.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

@@ -1,8 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { parseDateSafe } from '../../common/utils/parse-date';
+import { applyFilters } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const CALENDAR_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'title', header: 'Title', required: true },
+  { field: 'startAt', header: 'Start Date', required: true },
+  { field: 'endAt', header: 'End Date' },
+  { field: 'type', header: 'Type' },
+  { field: 'location', header: 'Location' },
+  { field: 'description', header: 'Description' },
+];
 
 const CALENDAR_SORT_FIELDS = ['title', 'startAt', 'endAt', 'type'] as const;
 
@@ -31,6 +43,7 @@ export class CalendarService {
       if (from) (where.startAt as Record<string, unknown>).gte = new Date(from);
       if (to) (where.startAt as Record<string, unknown>).lte = new Date(to);
     }
+    applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
       where.OR = [
@@ -82,5 +95,33 @@ export class CalendarService {
   async remove(tenantId: string, id: string) {
     await this.findOne(tenantId, id);
     return this.prisma.calendarEvent.delete({ where: { id } });
+  }
+
+  async exportAll(tenantId: string, selectedIds?: string[]) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    return this.prisma.calendarEvent.findMany({ where, orderBy: { startAt: 'desc' } });
+  }
+
+  async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const missing: string[] = [];
+        if (!row.title || !String(row.title).trim()) missing.push('Title');
+        const startAt = parseDateSafe(row.startAt);
+        if (!startAt) missing.push('Start Date');
+        if (missing.length) { result.errors.push({ row: i + 2, message: `Missing required: ${missing.join(', ')}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, title: String(row.title ?? ''), startAt };
+        if (row.endAt) { const d = parseDateSafe(row.endAt); if (d) data.endAt = d; }
+        if (row.type) data.type = String(row.type);
+        if (row.location) data.location = String(row.location);
+        if (row.description) data.description = String(row.description);
+        await this.prisma.calendarEvent.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

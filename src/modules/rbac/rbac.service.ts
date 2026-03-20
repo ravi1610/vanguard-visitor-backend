@@ -1,10 +1,44 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const RBAC_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+const CRUDIEX_ACTIONS = ['create', 'read', 'update', 'delete', 'import', 'export'] as const;
+const MODULE_KEYS = [
+  'tenant',
+  'user',
+  'visitor',
+  'visit',
+  'staff',
+  'vehicles',
+  'spaces',
+  'maintenance',
+  'projects',
+  'calendar',
+  'documents',
+  'compliance',
+  'vendors',
+  'reports',
+  'bolos',
+  'packages',
+  'violations',
+  'pets',
+  'emergencyContacts',
+  'units',
+] as const;
+
+const GRANULAR_PERMISSION_KEYS = MODULE_KEYS.flatMap((moduleKey) =>
+  CRUDIEX_ACTIONS.map((action) => `${moduleKey}.${action}`),
+);
+
 const PERMISSION_KEYS = [
+  ...GRANULAR_PERMISSION_KEYS,
   'tenant.manage',
   'user.manage',
   'visitor.view',
@@ -32,6 +66,7 @@ const PERMISSION_KEYS = [
   'vendors.view',
   'vendors.manage',
   'reports.view',
+  'reports.manage',
   'bolos.view',
   'bolos.manage',
   'packages.view',
@@ -55,10 +90,26 @@ const DEFAULT_ROLES: Record<
     description: 'Full control over tenant, users, and configuration',
     permissions: PERMISSION_KEYS, // tenant_owner gets ALL permissions
   },
+  admin: {
+    name: 'Admin',
+    description: 'Administrative access to all operational modules',
+    permissions: PERMISSION_KEYS.filter((key) => key !== 'tenant.manage'),
+  },
   receptionist: {
     name: 'Receptionist',
     description: 'Manage visitors and visits',
     permissions: [
+      'visitor.read',
+      'visitor.create',
+      'visitor.update',
+      'visitor.delete',
+      'visit.read',
+      'visit.create',
+      'visit.update',
+      'packages.read',
+      'packages.create',
+      'packages.update',
+      'bolos.read',
       'visitor.view',
       'visitor.manage',
       'visit.view',
@@ -74,6 +125,13 @@ const DEFAULT_ROLES: Record<
     name: 'Security',
     description: 'View visits and check out visitors',
     permissions: [
+      'user.read',
+      'visit.read',
+      'visit.create',
+      'visit.update',
+      'vehicles.read',
+      'bolos.read',
+      'packages.read',
       'visit.view',
       'visit.checkout',
       'visit.view_history',
@@ -90,12 +148,62 @@ const DEFAULT_ROLES: Record<
   },
 };
 
+function normalizeRoleKey(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 @Injectable()
 export class RbacService {
   constructor(
     private prisma: PrismaService,
     @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
+
+  private expandLegacyPermissions(keys: string[]): string[] {
+    const expanded = new Set(keys);
+    const byModule = new Map<string, Set<string>>();
+
+    for (const key of keys) {
+      const [moduleKey, action] = key.split('.');
+      if (!moduleKey || !action) continue;
+      if (!byModule.has(moduleKey)) byModule.set(moduleKey, new Set());
+      byModule.get(moduleKey)!.add(action);
+    }
+
+    for (const [moduleKey, actions] of byModule) {
+      if (actions.has('read')) expanded.add(`${moduleKey}.view`);
+      // Keep override control per action — do not auto-add module.manage
+
+      if (moduleKey === 'visit' && (actions.has('create') || actions.has('update'))) {
+        expanded.add('visit.checkin');
+      }
+      if (moduleKey === 'visit' && actions.has('update')) {
+        expanded.add('visit.checkout');
+      }
+      if (moduleKey === 'visit' && actions.has('read')) {
+        expanded.add('visit.view_history');
+      }
+    }
+
+    return Array.from(expanded);
+  }
+
+  private async ensureUniqueRoleKey(tenantId: string, key: string, excludeRoleId?: string) {
+    const existing = await this.prisma.role.findFirst({
+      where: {
+        tenantId,
+        key,
+        ...(excludeRoleId ? { NOT: { id: excludeRoleId } } : {}),
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Role key already exists');
+    }
+  }
 
   getPermissionsFromRoles(roles: { rolePermissions: { permission: { key: string } }[] }[]): string[] {
     const set = new Set<string>();
@@ -105,6 +213,40 @@ export class RbacService {
       }
     }
     return Array.from(set);
+  }
+
+  getEffectivePermissions(
+    roles: { rolePermissions: { permission: { key: string } }[] }[],
+    userPermissions: { effect: 'allow' | 'deny'; permission: { key: string } }[],
+  ) {
+    const inherited = this.getPermissionsFromRoles(roles);
+    const effective = new Set(inherited);
+    const grants: string[] = [];
+    const denies: string[] = [];
+
+    for (const override of userPermissions) {
+      if (override.effect === 'allow') {
+        effective.add(override.permission.key);
+        grants.push(override.permission.key);
+      } else {
+        effective.delete(override.permission.key);
+        denies.push(override.permission.key);
+      }
+    }
+
+    const inheritedExpanded = this.expandLegacyPermissions(inherited).sort();
+    const grantsExpanded = this.expandLegacyPermissions(grants).sort();
+    const deniesExpanded = this.expandLegacyPermissions(denies).sort();
+    const effectiveExpanded = this.expandLegacyPermissions(Array.from(effective)).sort();
+
+    return {
+      inherited: inheritedExpanded,
+      grants: grants.sort(),
+      denies: denies.sort(),
+      grantsExpanded,
+      deniesExpanded,
+      effective: effectiveExpanded,
+    };
   }
 
   async seedPermissionsIfNeeded() {
@@ -206,6 +348,68 @@ export class RbacService {
     }
   }
 
+  async createRole(tenantId: string, dto: { name: string; key: string; description?: string | null }) {
+    const trimmedName = dto.name?.trim() ?? '';
+    if (!trimmedName) throw new BadRequestException('Role name is required');
+    const normalizedKey = normalizeRoleKey(dto.key ?? '');
+    if (!normalizedKey) throw new BadRequestException('Role key is required');
+    await this.ensureUniqueRoleKey(tenantId, normalizedKey);
+    const role = await this.prisma.role.create({
+      data: {
+        tenantId,
+        name: trimmedName,
+        key: normalizedKey,
+        description: dto.description?.trim() || null,
+      },
+    });
+    await this.cache.del(`rbac:roles:${tenantId}`);
+    return role;
+  }
+
+  async updateRole(
+    tenantId: string,
+    roleId: string,
+    dto: { name?: string; key?: string; description?: string | null },
+  ) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+    const updates: { name?: string; key?: string; description?: string | null } = {};
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (!trimmed) throw new BadRequestException('Role name cannot be empty');
+      updates.name = trimmed;
+    }
+    if (dto.description !== undefined) {
+      const desc = dto.description?.trim() ?? '';
+      updates.description = desc || null;
+    }
+    if (dto.key !== undefined) {
+      const normalizedKey = normalizeRoleKey(dto.key);
+      if (!normalizedKey) throw new BadRequestException('Role key is required');
+      await this.ensureUniqueRoleKey(tenantId, normalizedKey, role.id);
+      updates.key = normalizedKey;
+    }
+    if (!Object.keys(updates).length) {
+      return role;
+    }
+    const updated = await this.prisma.role.update({
+      where: { id: roleId },
+      data: updates,
+    });
+    await this.cache.del(`rbac:roles:${tenantId}`);
+    return updated;
+  }
+
+  async deleteRole(tenantId: string, roleId: string) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.key === 'tenant_owner') {
+      throw new BadRequestException('System role cannot be deleted');
+    }
+    await this.prisma.role.delete({ where: { id: roleId } });
+    await this.cache.del(`rbac:roles:${tenantId}`);
+  }
+
   async getRolesForTenant(tenantId: string) {
     const cacheKey = `rbac:roles:${tenantId}`;
     const cached = await this.cache.get(cacheKey);
@@ -220,5 +424,179 @@ export class RbacService {
 
     await this.cache.set(cacheKey, roles, RBAC_CACHE_TTL);
     return roles;
+  }
+
+  async getPermissionCatalog() {
+    const rows = await this.prisma.permission.findMany({
+      select: { key: true, description: true },
+      orderBy: { key: 'asc' },
+    });
+    return rows;
+  }
+
+  async getPermissionMatrix(tenantId: string) {
+    const [permissions, roles] = await Promise.all([
+      this.getPermissionCatalog(),
+      this.prisma.role.findMany({
+        where: { tenantId },
+        include: { rolePermissions: { include: { permission: true } } },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    return {
+      permissions,
+      roles: roles.map((role) => ({
+        id: role.id,
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        permissionKeys: role.rolePermissions
+          .map((rp) => rp.permission.key)
+          .sort(),
+      })),
+    };
+  }
+
+  async setRolePermissions(tenantId: string, roleId: string, permissionKeys: string[]) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+
+    const normalizedKeys = Array.from(
+      new Set((permissionKeys ?? []).map((key) => key.trim()).filter(Boolean)),
+    );
+
+    const permissions = await this.prisma.permission.findMany({
+      where: { key: { in: normalizedKeys } },
+      select: { id: true, key: true },
+    });
+    const foundKeys = new Set(permissions.map((p) => p.key));
+    const missing = normalizedKeys.filter((key) => !foundKeys.has(key));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Unknown permission keys: ${missing.join(', ')}`,
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.rolePermission.deleteMany({ where: { roleId } }),
+      ...(permissions.length
+        ? [
+            this.prisma.rolePermission.createMany({
+              data: permissions.map((permission) => ({
+                roleId,
+                permissionId: permission.id,
+              })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
+
+    await this.cache.del(`rbac:roles:${tenantId}`);
+    return this.getPermissionMatrix(tenantId);
+  }
+
+  async getUserPermissionProfile(tenantId: string, userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: { include: { permission: true } },
+              },
+            },
+          },
+        },
+        userPermissions: {
+          include: { permission: true },
+          orderBy: { permission: { key: 'asc' } },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const roleSnapshots = user.userRoles.map((item) => item.role);
+    const roleKeys = roleSnapshots.map((role) => role.key).sort();
+    const effective = this.getEffectivePermissions(
+      roleSnapshots,
+      user.userPermissions.map((item) => ({
+        effect: item.effect,
+        permission: { key: item.permission.key },
+      })),
+    );
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        roleKeys,
+      },
+      ...effective,
+    };
+  }
+
+  async setUserPermissionOverrides(
+    tenantId: string,
+    userId: string,
+    grants: string[],
+    denies: string[],
+  ) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const grantKeys = Array.from(new Set((grants ?? []).map((key) => key.trim()).filter(Boolean)));
+    const denyKeys = Array.from(new Set((denies ?? []).map((key) => key.trim()).filter(Boolean)));
+    const overlap = grantKeys.filter((key) => denyKeys.includes(key));
+    if (overlap.length) {
+      throw new BadRequestException(
+        `Cannot both grant and deny: ${overlap.join(', ')}`,
+      );
+    }
+
+    const allKeys = Array.from(new Set([...grantKeys, ...denyKeys]));
+    const permissions = await this.prisma.permission.findMany({
+      where: { key: { in: allKeys } },
+      select: { id: true, key: true },
+    });
+    const keyToId = new Map(permissions.map((permission) => [permission.key, permission.id]));
+    const missing = allKeys.filter((key) => !keyToId.has(key));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Unknown permission keys: ${missing.join(', ')}`,
+      );
+    }
+
+    const creates = [
+      ...grantKeys.map((key) => ({
+        userId,
+        permissionId: keyToId.get(key)!,
+        effect: 'allow' as const,
+      })),
+      ...denyKeys.map((key) => ({
+        userId,
+        permissionId: keyToId.get(key)!,
+        effect: 'deny' as const,
+      })),
+    ];
+
+    await this.prisma.$transaction([
+      this.prisma.userPermission.deleteMany({ where: { userId } }),
+      ...(creates.length
+        ? [
+            this.prisma.userPermission.createMany({
+              data: creates,
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
+
+    return this.getUserPermissionProfile(tenantId, userId);
   }
 }

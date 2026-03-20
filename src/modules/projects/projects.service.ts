@@ -1,10 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import type { FieldMapping, ImportResult } from '../../common/import-export/import-export.service';
+
+export const PROJECT_FIELD_MAPPING: FieldMapping[] = [
+  { field: 'name', header: 'Name', required: true },
+  { field: 'description', header: 'Description' },
+  { field: 'status', header: 'Status' },
+];
 
 const PROJECT_SORT_FIELDS = ['name', 'status', 'createdAt'] as const;
 
@@ -30,6 +38,7 @@ export class ProjectsService {
       OR?: object[];
     } = { tenantId };
     if (status) where.status = status as 'active' | 'completed' | 'on_hold';
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [
@@ -172,5 +181,30 @@ export class ProjectsService {
   async removeTask(tenantId: string, projectId: string, taskId: string) {
     await this.findOneTask(tenantId, projectId, taskId);
     return this.prisma.task.delete({ where: { id: taskId } });
+  }
+
+  async exportAllProjects(tenantId: string, selectedIds?: string[], status?: string) {
+    const where: any = { tenantId };
+    if (selectedIds?.length) where.id = { in: selectedIds };
+    if (status) where.status = status;
+    return this.prisma.project.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async bulkImportProjects(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
+    const result: ImportResult = { total: rows.length, created: 0, skipped: 0, errors: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        if (!row.name || !String(row.name).trim()) { result.errors.push({ row: i + 2, message: 'Missing required: Name' }); continue; }
+        const existing = await this.prisma.project.findFirst({ where: { tenantId, name: String(row.name) } });
+        if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate project: ${row.name}` }); continue; }
+        const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
+        if (row.description) data.description = String(row.description);
+        if (row.status) data.status = String(row.status);
+        await this.prisma.project.create({ data: data as any });
+        result.created++;
+      } catch (e) { result.errors.push({ row: i + 2, message: e instanceof Error ? e.message : 'Unknown error' }); }
+    }
+    return result;
   }
 }

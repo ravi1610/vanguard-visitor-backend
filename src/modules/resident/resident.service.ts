@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { ResidentScheduleVisitDto, SendVia } from './dto/schedule-visit.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -95,6 +96,7 @@ export class ResidentService {
   ) {
     const where: any = { tenantId, hostUserId: userId };
     if (status) where.status = status;
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {
@@ -259,6 +261,7 @@ export class ResidentService {
   async getPackages(tenantId: string, userId: string, query: PagedQueryDto, status?: string) {
     const where: any = { tenantId, recipientId: userId };
     if (status) where.status = status;
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {
@@ -306,6 +309,7 @@ export class ResidentService {
   ) {
     const where: any = { tenantId, assignedToUserId: userId };
     if (status) where.status = status;
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {
@@ -372,6 +376,7 @@ export class ResidentService {
 
   async getDocuments(tenantId: string, query: PagedQueryDto) {
     const where: any = { tenantId };
+    applyFilters(where, query.filters);
 
     const search = query.search?.trim();
     if (search) {
@@ -422,6 +427,7 @@ export class ResidentService {
   async getCompliance(tenantId: string, query: PagedQueryDto, status?: string) {
     const where: any = { tenantId };
     if (status) where.status = status;
+    applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {

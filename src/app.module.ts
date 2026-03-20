@@ -41,6 +41,7 @@ import { EmailModule } from './modules/email/email.module';
 import { ResidentModule } from './modules/resident/resident.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { ImportExportModule } from './common/import-export/import-export.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -101,6 +102,7 @@ import configuration from './config/configuration';
     }),
 
     PrismaModule,
+    ImportExportModule,
     RbacModule,
     AuthModule,
     TenantsModule,

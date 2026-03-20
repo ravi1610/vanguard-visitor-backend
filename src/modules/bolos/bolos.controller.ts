@@ -8,13 +8,16 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -23,19 +26,23 @@ import {
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { BolosService } from './bolos.service';
+import { BolosService, BOLO_FIELD_MAPPING } from './bolos.service';
 import { CreateBoloDto } from './dto/create-bolo.dto';
 import { UpdateBoloDto } from './dto/update-bolo.dto';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
+import { ImportExportService } from '../../common/import-export/import-export.service';
 
 @ApiTags('BOLOs')
 @ApiBearerAuth('JWT')
 @Controller('bolos')
 export class BolosController {
-  constructor(private bolos: BolosService) {}
+  constructor(
+    private bolos: BolosService,
+    private importExport: ImportExportService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionsGuard)
@@ -54,6 +61,66 @@ export class BolosController {
     return this.bolos.findAll(tenantId, query, status);
   }
 
+  /* ─── Export / Import ─────────────────────────────────────────────── */
+
+  @Get('export')
+  @UseGuards(PermissionsGuard)
+  @Permissions('bolos.export')
+  @ApiOperation({ summary: 'Export BOLOs as XLSX' })
+  @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
+  async exportXlsx(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('ids') ids?: string,
+    @Query('status') status?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const selectedIds = ids ? ids.split(',').map((id) => id.trim()).filter(Boolean) : undefined;
+    const rows = await this.bolos.exportAll(tenantId, selectedIds, status);
+    const buffer = this.importExport.buildXlsx(rows as unknown as Record<string, unknown>[], BOLO_FIELD_MAPPING, 'BOLOs');
+    res?.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="bolos-export.xlsx"' });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('export/template')
+  @UseGuards(PermissionsGuard)
+  @Permissions('bolos.import')
+  @ApiOperation({ summary: 'Download BOLOs import template (XLSX)' })
+  exportTemplate(@Res({ passthrough: true }) res: Response) {
+    const buffer = this.importExport.buildTemplate(BOLO_FIELD_MAPPING, 'BOLOs Template');
+    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="bolos-import-template.xlsx"' });
+    return new StreamableFile(buffer);
+  }
+
+  @Post('import')
+  @UseGuards(PermissionsGuard)
+  @Permissions('bolos.import')
+  @ApiOperation({ summary: 'Bulk import BOLOs from XLSX file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { const allowed = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']; if (allowed.includes(file.mimetype) || file.originalname.match(/\.xlsx?$/i)) { cb(null, true); } else { cb(new BadRequestException('Only XLSX files are accepted'), false); } } }))
+  async importXlsx(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, BOLO_FIELD_MAPPING);
+    const result = await this.bolos.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
+  }
+
+  @Post('import-csv')
+  @UseGuards(PermissionsGuard)
+  @Permissions('bolos.import')
+  @ApiOperation({ summary: 'Bulk import BOLOs from CSV file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.match(/\.csv$/i)) { cb(null, true); } else { cb(new BadRequestException('Only CSV files are accepted'), false); } } }))
+  async importCsv(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, BOLO_FIELD_MAPPING);
+    const result = await this.bolos.bulkImport(tenantId, parsedRows);
+    result.errors.push(...errors); result.total += errors.length;
+    return result;
+  }
+
   @Get(':id')
   @UseGuards(PermissionsGuard)
   @Permissions('bolos.view')
@@ -67,7 +134,7 @@ export class BolosController {
 
   @Post()
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.create')
   @ApiOperation({ summary: 'Create a new BOLO alert' })
   create(
     @CurrentUser('tenantId') tenantId: string,
@@ -79,7 +146,7 @@ export class BolosController {
 
   @Patch(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Update a BOLO alert' })
   update(
     @CurrentUser('tenantId') tenantId: string,
@@ -91,7 +158,7 @@ export class BolosController {
 
   @Post(':id/resolve')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Mark a BOLO alert as resolved' })
   resolve(
     @CurrentUser('tenantId') tenantId: string,
@@ -103,7 +170,7 @@ export class BolosController {
 
   @Post(':id/photo')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.update')
   @ApiOperation({ summary: 'Upload BOLO photo' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -153,7 +220,7 @@ export class BolosController {
 
   @Delete(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('bolos.manage')
+  @Permissions('bolos.delete')
   @ApiOperation({ summary: 'Delete a BOLO alert' })
   remove(
     @CurrentUser('tenantId') tenantId: string,

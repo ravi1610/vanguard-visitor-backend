@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 import { CreateViolationDto } from './dto/create-violation.dto';
 import { UpdateViolationDto } from './dto/update-violation.dto';
@@ -50,6 +51,7 @@ export class ViolationsService {
     const where: Record<string, unknown> = { tenantId };
     if (userId) where.userId = userId;
     if (status) where.status = status;
+    applyFilters(where, query.filters, { status: equals('status') });
     const search = query.search?.trim();
     if (search) {
       where.OR = [
