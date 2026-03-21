@@ -69,7 +69,7 @@ export class RbacController {
 
   @Get()
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.view')
   @ApiOperation({ summary: 'List all roles for current tenant' })
   getRoles(@CurrentUser('tenantId') tenantId: string) {
     return this.rbac.getRolesForTenant(tenantId);
@@ -77,15 +77,18 @@ export class RbacController {
 
   @Post()
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.manage')
   @ApiOperation({ summary: 'Create a custom role' })
-  createRole(@CurrentUser('tenantId') tenantId: string, @Body() dto: CreateRoleDto) {
+  createRole(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body() dto: CreateRoleDto,
+  ) {
     return this.rbac.createRole(tenantId, dto);
   }
 
   @Patch(':roleId')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.manage')
   @ApiOperation({ summary: 'Update role metadata' })
   updateRole(
     @CurrentUser('tenantId') tenantId: string,
@@ -97,15 +100,18 @@ export class RbacController {
 
   @Delete(':roleId')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.manage')
   @ApiOperation({ summary: 'Delete a role' })
-  deleteRole(@CurrentUser('tenantId') tenantId: string, @Param('roleId') roleId: string) {
+  deleteRole(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('roleId') roleId: string,
+  ) {
     return this.rbac.deleteRole(tenantId, roleId);
   }
 
   @Get('permissions-catalog')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.view')
   @ApiOperation({ summary: 'List all available permission keys' })
   getPermissionCatalog() {
     return this.rbac.getPermissionCatalog();
@@ -113,7 +119,7 @@ export class RbacController {
 
   @Get('permission-matrix')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.view')
   @ApiOperation({ summary: 'Get tenant roles with assigned permission keys' })
   getPermissionMatrix(@CurrentUser('tenantId') tenantId: string) {
     return this.rbac.getPermissionMatrix(tenantId);
@@ -121,20 +127,26 @@ export class RbacController {
 
   @Patch(':roleId/permissions')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.manage')
   @ApiOperation({ summary: 'Replace all permissions for a role' })
   setRolePermissions(
     @CurrentUser('tenantId') tenantId: string,
     @Param('roleId') roleId: string,
     @Body() dto: UpdateRolePermissionsDto,
   ) {
-    return this.rbac.setRolePermissions(tenantId, roleId, dto.permissionKeys ?? []);
+    return this.rbac.setRolePermissions(
+      tenantId,
+      roleId,
+      dto.permissionKeys ?? [],
+    );
   }
 
   @Get('users/:userId/permissions')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
-  @ApiOperation({ summary: 'Get effective permissions and overrides for a user' })
+  @Permissions('permissions.view')
+  @ApiOperation({
+    summary: 'Get effective permissions and overrides for a user',
+  })
   getUserPermissions(
     @CurrentUser('tenantId') tenantId: string,
     @Param('userId') userId: string,
@@ -144,7 +156,7 @@ export class RbacController {
 
   @Patch('users/:userId/permissions')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('permissions.manage')
   @ApiOperation({ summary: 'Replace user-specific permission overrides' })
   setUserPermissionOverrides(
     @CurrentUser('tenantId') tenantId: string,

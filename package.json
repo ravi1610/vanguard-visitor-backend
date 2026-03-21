@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json --outDir dist",
     "dev:build": "tsc -w -p tsconfig.build.json --outDir dist --pretty false",
-    "dev:run": "powershell -NoProfile -Command \"while (!(Test-Path 'dist\\\\main.js')) { Start-Sleep -Milliseconds 200 }; node --watch dist\\\\main.js\"",
+    "dev:run": "node --watch dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push --config ./prisma/prisma.config.ts",
     "prisma:studio": "prisma studio --config ./prisma/prisma.config.ts",
