@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma, VehicleOwnerType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { applyFilters, equals } from '../../common/utils/filter-utils';
 import { PagedQueryDto } from '../../common/dto/paged-query.dto';
@@ -374,9 +375,10 @@ export class ResidentService {
 
   // ── Documents ────────────────────────────────────────────
 
-  async getDocuments(tenantId: string, query: PagedQueryDto) {
-    const where: any = { tenantId };
-    applyFilters(where, query.filters);
+  /** Documents uploaded by this resident (personal "My documents"). */
+  async getDocuments(tenantId: string, userId: string, query: PagedQueryDto) {
+    const where: Prisma.DocumentWhereInput = { tenantId, uploadedByUserId: userId };
+    applyFilters(where as any, query.filters);
 
     const search = query.search?.trim();
     if (search) {
@@ -409,9 +411,9 @@ export class ResidentService {
     return { rows, total };
   }
 
-  async getDocumentDetail(tenantId: string, id: string) {
+  async getDocumentDetail(tenantId: string, userId: string, id: string) {
     const doc = await this.prisma.document.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, uploadedByUserId: userId },
       include: {
         uploadedBy: {
           select: { id: true, firstName: true, lastName: true },
@@ -453,6 +455,149 @@ export class ResidentService {
     ]);
 
     return { rows, total };
+  }
+
+  async getComplianceDetail(tenantId: string, id: string) {
+    const item = await this.prisma.complianceItem.findFirst({
+      where: { id, tenantId },
+    });
+    if (!item) throw new NotFoundException('Compliance item not found');
+    return item;
+  }
+
+  // ── Vehicles (resident-owned or unit-registered) ─────────
+
+  async getVehicles(tenantId: string, userId: string, query: PagedQueryDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { unitId: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const unitId = user.unitId;
+    const ownershipOr: Prisma.VehicleWhereInput[] = [
+      { ownerType: VehicleOwnerType.resident, ownerId: userId },
+    ];
+    if (unitId) ownershipOr.push({ unitId });
+
+    const andParts: Prisma.VehicleWhereInput[] = [{ OR: ownershipOr }];
+
+    const search = query.search?.trim();
+    if (search) {
+      andParts.push({
+        OR: [
+          { plateNumber: { contains: search, mode: 'insensitive' } },
+          { make: { contains: search, mode: 'insensitive' } },
+          { model: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    const where: Prisma.VehicleWhereInput = {
+      tenantId,
+      AND: andParts,
+    };
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 25;
+    const skip = (page - 1) * pageSize;
+    const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
+
+    const [rows, total] = await Promise.all([
+      this.prisma.vehicle.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: sortDir },
+        include: {
+          unit: { select: { id: true, unitNumber: true, building: true } },
+        },
+      }),
+      this.prisma.vehicle.count({ where }),
+    ]);
+
+    return { rows, total };
+  }
+
+  async getVehicleDetail(tenantId: string, userId: string, id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { unitId: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const unitId = user.unitId;
+    const ownershipOr: Prisma.VehicleWhereInput[] = [
+      { ownerType: VehicleOwnerType.resident, ownerId: userId },
+    ];
+    if (unitId) ownershipOr.push({ unitId });
+
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: {
+        id,
+        tenantId,
+        OR: ownershipOr,
+      },
+      include: {
+        unit: { select: { id: true, unitNumber: true, building: true } },
+      },
+    });
+    if (!vehicle) throw new NotFoundException('Vehicle not found');
+    return vehicle;
+  }
+
+  // ── Calendar (tenant events, read-only) ───────────────────
+
+  private static readonly CALENDAR_SORT_FIELDS = ['title', 'startAt', 'endAt', 'type'] as const;
+
+  async getCalendarEvents(tenantId: string, query: PagedQueryDto, from?: string, to?: string) {
+    const where: Prisma.CalendarEventWhereInput = { tenantId };
+    if (from || to) {
+      where.startAt = {};
+      if (from) (where.startAt as Record<string, unknown>).gte = new Date(from);
+      if (to) (where.startAt as Record<string, unknown>).lte = new Date(to);
+    }
+    applyFilters(where as any, query.filters);
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { location: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 25;
+    const skip = (page - 1) * pageSize;
+    const sortField =
+      query.sortField &&
+      ResidentService.CALENDAR_SORT_FIELDS.includes(
+        query.sortField as (typeof ResidentService.CALENDAR_SORT_FIELDS)[number],
+      )
+        ? query.sortField
+        : 'startAt';
+    const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
+
+    const [rows, total] = await Promise.all([
+      this.prisma.calendarEvent.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { [sortField]: sortDir },
+      }),
+      this.prisma.calendarEvent.count({ where }),
+    ]);
+
+    return { rows, total };
+  }
+
+  async getCalendarEventDetail(tenantId: string, id: string) {
+    const event = await this.prisma.calendarEvent.findFirst({
+      where: { id, tenantId },
+    });
+    if (!event) throw new NotFoundException('Event not found');
+    return event;
   }
 
   // ── Dashboard ────────────────────────────────────────────
