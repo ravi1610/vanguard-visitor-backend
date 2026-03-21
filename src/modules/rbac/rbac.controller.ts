@@ -69,7 +69,7 @@ export class RbacController {
 
   @Get()
   @UseGuards(PermissionsGuard)
-  @Permissions('permissions.view')
+  @Permissions('permissions.view', 'permissions.manage')
   @ApiOperation({ summary: 'List all roles for current tenant' })
   getRoles(@CurrentUser('tenantId') tenantId: string) {
     return this.rbac.getRolesForTenant(tenantId);
@@ -111,7 +111,7 @@ export class RbacController {
 
   @Get('permissions-catalog')
   @UseGuards(PermissionsGuard)
-  @Permissions('permissions.view')
+  @Permissions('permissions.view', 'permissions.manage')
   @ApiOperation({ summary: 'List all available permission keys' })
   getPermissionCatalog() {
     return this.rbac.getPermissionCatalog();
@@ -119,7 +119,7 @@ export class RbacController {
 
   @Get('permission-matrix')
   @UseGuards(PermissionsGuard)
-  @Permissions('permissions.view')
+  @Permissions('permissions.view', 'permissions.manage')
   @ApiOperation({ summary: 'Get tenant roles with assigned permission keys' })
   getPermissionMatrix(@CurrentUser('tenantId') tenantId: string) {
     return this.rbac.getPermissionMatrix(tenantId);
@@ -143,7 +143,7 @@ export class RbacController {
 
   @Get('users/:userId/permissions')
   @UseGuards(PermissionsGuard)
-  @Permissions('permissions.view')
+  @Permissions('permissions.view', 'permissions.manage')
   @ApiOperation({
     summary: 'Get effective permissions and overrides for a user',
   })
