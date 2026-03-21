@@ -25,12 +25,16 @@ export class TenantsController {
   constructor(private tenants: TenantsService) {}
 
   @Get('me')
+  @UseGuards(PermissionsGuard)
+  @Permissions('tenant.read')
   @ApiOperation({ summary: 'Get current tenant details' })
   getMyTenant(@CurrentUser('tenantId') tenantId: string) {
     return this.tenants.getMyTenant(tenantId);
   }
 
   @Get()
+  @UseGuards(PermissionsGuard)
+  @Permissions('tenant.read')
   @ApiOperation({ summary: 'List all tenants' })
   findAll(@CurrentUser('tenantId') tenantId: string) {
     return this.tenants.findMany(tenantId);
@@ -38,7 +42,7 @@ export class TenantsController {
 
   @Post()
   @UseGuards(PermissionsGuard)
-  @Permissions('tenant.manage')
+  @Permissions('tenant.create')
   @ApiOperation({ summary: 'Create a new tenant' })
   create(
     @CurrentUser() user: JwtPayload,
@@ -49,7 +53,7 @@ export class TenantsController {
 
   @Patch(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('tenant.manage')
+  @Permissions('tenant.update')
   @ApiOperation({ summary: 'Update a tenant' })
   update(
     @Param('id') id: string,
