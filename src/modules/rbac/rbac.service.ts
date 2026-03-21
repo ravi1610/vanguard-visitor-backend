@@ -286,20 +286,8 @@ export class RbacService {
       const existing = roleByKey.get(roleKey);
 
       if (existing) {
-        // Role exists — add only missing permissions (single batch)
-        const existingPermIds = new Set(existing.rolePermissions.map((rp) => rp.permissionId));
-        const permIdsToAdd = def.permissions
-          .map((k) => keyToId.get(k))
-          .filter((id): id is string => !!id && !existingPermIds.has(id));
-        if (permIdsToAdd.length > 0) {
-          await this.prisma.rolePermission.createMany({
-            data: permIdsToAdd.map((permissionId) => ({
-              roleId: existing.id,
-              permissionId,
-            })),
-            skipDuplicates: true,
-          });
-        }
+        // Role exists — do not auto-append permissions.
+        // This preserves tenant-specific role customization made in Permissions UI.
         continue;
       }
 
