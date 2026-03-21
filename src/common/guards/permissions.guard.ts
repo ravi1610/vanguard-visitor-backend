@@ -81,10 +81,10 @@ export class PermissionsGuard implements CanActivate {
     // Superadmins bypass all permission checks
     if (payload?.isSuperAdmin) return true;
 
-    const hasAll = requiredPermissions.every((perm) =>
+    const hasAny = requiredPermissions.some((perm) =>
       this.hasPermission(granted, perm, method, path),
     );
-    if (!hasAll) {
+    if (!hasAny) {
       throw new ForbiddenException('Insufficient permissions');
     }
     return true;
