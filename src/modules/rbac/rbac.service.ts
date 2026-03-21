@@ -9,7 +9,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const RBAC_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-const CRUDIEX_ACTIONS = ['create', 'read', 'update', 'delete', 'import', 'export'] as const;
+const CRUDIEX_ACTIONS = [
+  'create',
+  'read',
+  'update',
+  'delete',
+  'import',
+  'export',
+] as const;
 const MODULE_KEYS = [
   'tenant',
   'user',
@@ -31,6 +38,7 @@ const MODULE_KEYS = [
   'pets',
   'emergencyContacts',
   'units',
+  'permissions',
 ] as const;
 
 const GRANULAR_PERMISSION_KEYS = MODULE_KEYS.flatMap((moduleKey) =>
@@ -79,6 +87,8 @@ const PERMISSION_KEYS = [
   'emergencyContacts.manage',
   'units.view',
   'units.manage',
+  'permissions.view',
+  'permissions.manage',
 ] as const;
 
 const DEFAULT_ROLES: Record<
@@ -178,7 +188,10 @@ export class RbacService {
       if (actions.has('read')) expanded.add(`${moduleKey}.view`);
       // Keep override control per action — do not auto-add module.manage
 
-      if (moduleKey === 'visit' && (actions.has('create') || actions.has('update'))) {
+      if (
+        moduleKey === 'visit' &&
+        (actions.has('create') || actions.has('update'))
+      ) {
         expanded.add('visit.checkin');
       }
       if (moduleKey === 'visit' && actions.has('update')) {
@@ -192,7 +205,11 @@ export class RbacService {
     return Array.from(expanded);
   }
 
-  private async ensureUniqueRoleKey(tenantId: string, key: string, excludeRoleId?: string) {
+  private async ensureUniqueRoleKey(
+    tenantId: string,
+    key: string,
+    excludeRoleId?: string,
+  ) {
     const existing = await this.prisma.role.findFirst({
       where: {
         tenantId,
@@ -205,7 +222,9 @@ export class RbacService {
     }
   }
 
-  getPermissionsFromRoles(roles: { rolePermissions: { permission: { key: string } }[] }[]): string[] {
+  getPermissionsFromRoles(
+    roles: { rolePermissions: { permission: { key: string } }[] }[],
+  ): string[] {
     const set = new Set<string>();
     for (const role of roles) {
       for (const rp of role.rolePermissions) {
@@ -217,7 +236,10 @@ export class RbacService {
 
   getEffectivePermissions(
     roles: { rolePermissions: { permission: { key: string } }[] }[],
-    userPermissions: { effect: 'allow' | 'deny'; permission: { key: string } }[],
+    userPermissions: {
+      effect: 'allow' | 'deny';
+      permission: { key: string };
+    }[],
   ) {
     const inherited = this.getPermissionsFromRoles(roles);
     const effective = new Set(inherited);
@@ -237,7 +259,9 @@ export class RbacService {
     const inheritedExpanded = this.expandLegacyPermissions(inherited).sort();
     const grantsExpanded = this.expandLegacyPermissions(grants).sort();
     const deniesExpanded = this.expandLegacyPermissions(denies).sort();
-    const effectiveExpanded = this.expandLegacyPermissions(Array.from(effective)).sort();
+    const effectiveExpanded = this.expandLegacyPermissions(
+      Array.from(effective),
+    ).sort();
 
     return {
       inherited: inheritedExpanded,
@@ -272,7 +296,9 @@ export class RbacService {
    */
   async seedDefaultRolesForTenant(tenantId: string) {
     // Single query: get all permissions
-    const permissions = await this.prisma.permission.findMany({ select: { id: true, key: true } });
+    const permissions = await this.prisma.permission.findMany({
+      select: { id: true, key: true },
+    });
     const keyToId = new Map(permissions.map((p) => [p.key, p.id]));
 
     // Single query: get all existing roles + their permissions for this tenant
@@ -286,8 +312,30 @@ export class RbacService {
       const existing = roleByKey.get(roleKey);
 
       if (existing) {
-        // Role exists — do not auto-append permissions.
-        // This preserves tenant-specific role customization made in Permissions UI.
+        // For system roles (tenant_owner, admin), append any newly added permissions
+        // that are missing. This ensures new permission keys (e.g. permissions.view)
+        // are granted to existing roles without overwriting customizations.
+        if (roleKey === 'tenant_owner' || roleKey === 'admin') {
+          const existingPermIds = new Set(
+            existing.rolePermissions.map((rp) => rp.permissionId),
+          );
+          const expectedPermIds = def.permissions
+            .map((k) => keyToId.get(k))
+            .filter(Boolean) as string[];
+          const missingPermIds = expectedPermIds.filter(
+            (id) => !existingPermIds.has(id),
+          );
+          if (missingPermIds.length > 0) {
+            await this.prisma.rolePermission.createMany({
+              data: missingPermIds.map((permissionId) => ({
+                roleId: existing.id,
+                permissionId,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
+        // For other roles, preserve tenant-specific customization.
         continue;
       }
 
@@ -336,7 +384,10 @@ export class RbacService {
     }
   }
 
-  async createRole(tenantId: string, dto: { name: string; key: string; description?: string | null }) {
+  async createRole(
+    tenantId: string,
+    dto: { name: string; key: string; description?: string | null },
+  ) {
     const trimmedName = dto.name?.trim() ?? '';
     if (!trimmedName) throw new BadRequestException('Role name is required');
     const normalizedKey = normalizeRoleKey(dto.key ?? '');
@@ -359,9 +410,15 @@ export class RbacService {
     roleId: string,
     dto: { name?: string; key?: string; description?: string | null },
   ) {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, tenantId },
+    });
     if (!role) throw new NotFoundException('Role not found');
-    const updates: { name?: string; key?: string; description?: string | null } = {};
+    const updates: {
+      name?: string;
+      key?: string;
+      description?: string | null;
+    } = {};
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
       if (!trimmed) throw new BadRequestException('Role name cannot be empty');
@@ -389,7 +446,9 @@ export class RbacService {
   }
 
   async deleteRole(tenantId: string, roleId: string) {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, tenantId },
+    });
     if (!role) throw new NotFoundException('Role not found');
     if (role.key === 'tenant_owner') {
       throw new BadRequestException('System role cannot be deleted');
@@ -446,8 +505,14 @@ export class RbacService {
     };
   }
 
-  async setRolePermissions(tenantId: string, roleId: string, permissionKeys: string[]) {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+  async setRolePermissions(
+    tenantId: string,
+    roleId: string,
+    permissionKeys: string[],
+  ) {
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, tenantId },
+    });
     if (!role) throw new NotFoundException('Role not found');
 
     const normalizedKeys = Array.from(
@@ -535,11 +600,17 @@ export class RbacService {
     grants: string[],
     denies: string[],
   ) {
-    const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+    });
     if (!user) throw new NotFoundException('User not found');
 
-    const grantKeys = Array.from(new Set((grants ?? []).map((key) => key.trim()).filter(Boolean)));
-    const denyKeys = Array.from(new Set((denies ?? []).map((key) => key.trim()).filter(Boolean)));
+    const grantKeys = Array.from(
+      new Set((grants ?? []).map((key) => key.trim()).filter(Boolean)),
+    );
+    const denyKeys = Array.from(
+      new Set((denies ?? []).map((key) => key.trim()).filter(Boolean)),
+    );
     const overlap = grantKeys.filter((key) => denyKeys.includes(key));
     if (overlap.length) {
       throw new BadRequestException(
@@ -552,7 +623,9 @@ export class RbacService {
       where: { key: { in: allKeys } },
       select: { id: true, key: true },
     });
-    const keyToId = new Map(permissions.map((permission) => [permission.key, permission.id]));
+    const keyToId = new Map(
+      permissions.map((permission) => [permission.key, permission.id]),
+    );
     const missing = allKeys.filter((key) => !keyToId.has(key));
     if (missing.length) {
       throw new BadRequestException(
