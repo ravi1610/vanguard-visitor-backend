@@ -161,21 +161,23 @@ export class ResidentController {
   // ── Documents ────────────────────────────────────────────
 
   @Get('documents')
-  @ApiOperation({ summary: 'List tenant-wide documents (paginated)' })
+  @ApiOperation({ summary: 'List documents uploaded by this resident (paginated)' })
   getDocuments(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('sub') userId: string,
     @Query() query: PagedQueryDto,
   ) {
-    return this.resident.getDocuments(tenantId, query);
+    return this.resident.getDocuments(tenantId, userId, query);
   }
 
   @Get('documents/:id')
   @ApiOperation({ summary: 'Get single document detail' })
   getDocumentDetail(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('sub') userId: string,
     @Param('id') id: string,
   ) {
-    return this.resident.getDocumentDetail(tenantId, id);
+    return this.resident.getDocumentDetail(tenantId, userId, id);
   }
 
   // ── Compliance ───────────────────────────────────────────
@@ -189,5 +191,60 @@ export class ResidentController {
     @Query('status') status?: string,
   ) {
     return this.resident.getCompliance(tenantId, query, status);
+  }
+
+  @Get('compliance/:id')
+  @ApiOperation({ summary: 'Get single compliance item (read-only)' })
+  getComplianceDetail(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.resident.getComplianceDetail(tenantId, id);
+  }
+
+  // ── Vehicles ─────────────────────────────────────────────
+
+  @Get('vehicles')
+  @ApiOperation({ summary: 'List vehicles registered to this resident or their unit' })
+  getVehicles(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('sub') userId: string,
+    @Query() query: PagedQueryDto,
+  ) {
+    return this.resident.getVehicles(tenantId, userId, query);
+  }
+
+  @Get('vehicles/:id')
+  @ApiOperation({ summary: 'Get vehicle detail' })
+  getVehicleDetail(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+  ) {
+    return this.resident.getVehicleDetail(tenantId, userId, id);
+  }
+
+  // ── Calendar (read-only) ─────────────────────────────────
+
+  @Get('calendar')
+  @ApiOperation({ summary: 'List calendar events for the tenant (read-only)' })
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  getCalendar(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: PagedQueryDto,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.resident.getCalendarEvents(tenantId, query, from, to);
+  }
+
+  @Get('calendar/:id')
+  @ApiOperation({ summary: 'Get calendar event detail (read-only)' })
+  getCalendarDetail(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.resident.getCalendarEventDetail(tenantId, id);
   }
 }
