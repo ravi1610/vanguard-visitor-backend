@@ -38,6 +38,7 @@ const MODULE_KEYS = [
   'pets',
   'emergencyContacts',
   'units',
+  'residents',
   'permissions',
 ] as const;
 
@@ -172,6 +173,9 @@ export class RbacService {
     private prisma: PrismaService,
     @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
+
+  private tenantRoleSyncPromises = new Map<string, Promise<void>>();
+  private tenantRolesSynced = new Set<string>();
 
   private expandLegacyPermissions(keys: string[]): string[] {
     const expanded = new Set(keys);
@@ -382,6 +386,28 @@ export class RbacService {
       const batch = tenants.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map((t) => this.seedDefaultRolesForTenant(t.id)));
     }
+  }
+
+  async ensureTenantRolesSynced(tenantId: string) {
+    if (!tenantId) return;
+    if (this.tenantRolesSynced.has(tenantId)) return;
+
+    const inFlight = this.tenantRoleSyncPromises.get(tenantId);
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    const promise = this.seedDefaultRolesForTenant(tenantId)
+      .then(() => {
+        this.tenantRolesSynced.add(tenantId);
+      })
+      .finally(() => {
+        this.tenantRoleSyncPromises.delete(tenantId);
+      });
+
+    this.tenantRoleSyncPromises.set(tenantId, promise);
+    await promise;
   }
 
   async createRole(

@@ -88,14 +88,28 @@ export class AuthService implements OnModuleInit {
   }
 
   async validateUser(email: string, password: string) {
-    const user = await this.prisma.user.findFirst({
+    const lookup = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
+      select: {
+        id: true,
+        tenantId: true,
+        passwordHash: true,
+        isActive: true,
+        tenant: { select: { isActive: true } },
+      },
+    });
+    if (!lookup?.tenant?.isActive) return null;
+
+    const ok = await bcrypt.compare(password, lookup.passwordHash);
+    if (!ok) return null;
+
+    await this.rbac.ensureTenantRolesSynced(lookup.tenantId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: lookup.id },
       include: USER_WITH_ROLES_INCLUDE,
     });
-    if (!user?.tenant?.isActive) return null;
-
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return null;
+    if (!user?.tenant?.isActive || !user.isActive) return null;
 
     return this.toAuthProfile(user);
   }
