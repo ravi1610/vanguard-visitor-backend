@@ -46,10 +46,10 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Lightweight: only inserts genuinely new permission keys (skips if none missing)
-    await this.rbac.seedPermissionsIfNeeded();
-    // Role sync now runs in background — doesn't block server startup
-    this.rbac.syncAllTenantsDefaultRoles().catch((err) => {
+    // Returns only keys that are brand-new (didn't exist before)
+    const newPermKeys = await this.rbac.seedPermissionsIfNeeded();
+    // Only grant newly-added keys to existing admin/tenant_owner roles; never restore removed ones
+    this.rbac.syncAllTenantsDefaultRoles(newPermKeys).catch((err) => {
       console.error('Background role sync failed:', err);
     });
   }
