@@ -27,7 +27,7 @@ export class UsersController {
 
   @Get()
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('user.manage', 'residents.read')
   @ApiOperation({ summary: 'List all users with pagination' })
   @ApiQuery({ name: 'roleKey', required: false, description: 'Filter by role key' })
   @ApiQuery({ name: 'isActive', required: false, description: 'Filter by active status (true/false)' })
@@ -120,7 +120,7 @@ export class UsersController {
 
   @Get(':id')
   @UseGuards(PermissionsGuard)
-  @Permissions('user.manage')
+  @Permissions('user.manage', 'residents.read')
   @ApiOperation({ summary: 'Get a user by ID' })
   findOne(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string) {
     return this.users.findOne(tenantId, id);
