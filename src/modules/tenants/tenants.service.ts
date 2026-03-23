@@ -96,7 +96,15 @@ export class TenantsService {
     return tenant;
   }
 
-  async findMany(tenantId: string) {
+  async findMany(tenantId: string, isSuperAdmin: boolean) {
+    if (isSuperAdmin) {
+      return this.prisma.tenant.findMany({
+        include: {
+          _count: { select: { users: true } },
+        },
+      });
+    }
+
     const hasManage = await this.prisma.tenant.findFirst({
       where: { id: tenantId },
     });

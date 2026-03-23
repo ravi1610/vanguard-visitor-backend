@@ -36,8 +36,8 @@ export class TenantsController {
   @UseGuards(PermissionsGuard)
   @Permissions('tenant.read')
   @ApiOperation({ summary: 'List all tenants' })
-  findAll(@CurrentUser('tenantId') tenantId: string) {
-    return this.tenants.findMany(tenantId);
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.tenants.findMany(user.tenantId, user.isSuperAdmin ?? false);
   }
 
   @Post()
