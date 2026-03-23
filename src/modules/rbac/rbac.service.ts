@@ -260,6 +260,31 @@ export class RbacService {
       }
     }
 
+    // Cascade: deny of X.read removes X.view from effective (they are synonymous).
+    // Deny of X.view similarly removes X.read.
+    // This prevents inherited .view permissions from surviving a .read deny.
+    for (const deny of denies) {
+      const lastDot = deny.lastIndexOf('.');
+      if (lastDot < 0) continue;
+      const moduleKey = deny.substring(0, lastDot);
+      const action = deny.substring(lastDot + 1);
+      if (action === 'read') {
+        effective.delete(`${moduleKey}.view`);
+        if (moduleKey === 'visit') {
+          effective.delete('visit.view_history');
+        }
+      } else if (action === 'view') {
+        effective.delete(`${moduleKey}.read`);
+      }
+    }
+    // Visit-specific cascades based on remaining effective permissions
+    if (!effective.has('visit.create') && !effective.has('visit.update')) {
+      effective.delete('visit.checkin');
+    }
+    if (!effective.has('visit.update')) {
+      effective.delete('visit.checkout');
+    }
+
     const inheritedExpanded = this.expandLegacyPermissions(inherited).sort();
     const grantsExpanded = this.expandLegacyPermissions(grants).sort();
     const deniesExpanded = this.expandLegacyPermissions(denies).sort();
