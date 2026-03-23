@@ -46,10 +46,10 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Lightweight: only inserts genuinely new permission keys (skips if none missing)
-    await this.rbac.seedPermissionsIfNeeded();
-    // Role sync now runs in background — doesn't block server startup
-    this.rbac.syncAllTenantsDefaultRoles().catch((err) => {
+    // Returns only keys that are brand-new (didn't exist before)
+    const newPermKeys = await this.rbac.seedPermissionsIfNeeded();
+    // Only grant newly-added keys to existing admin/tenant_owner roles; never restore removed ones
+    this.rbac.syncAllTenantsDefaultRoles(newPermKeys).catch((err) => {
       console.error('Background role sync failed:', err);
     });
   }
@@ -88,14 +88,28 @@ export class AuthService implements OnModuleInit {
   }
 
   async validateUser(email: string, password: string) {
-    const user = await this.prisma.user.findFirst({
+    const lookup = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase(), isActive: true },
+      select: {
+        id: true,
+        tenantId: true,
+        passwordHash: true,
+        isActive: true,
+        tenant: { select: { isActive: true } },
+      },
+    });
+    if (!lookup?.tenant?.isActive) return null;
+
+    const ok = await bcrypt.compare(password, lookup.passwordHash);
+    if (!ok) return null;
+
+    await this.rbac.ensureTenantRolesSynced(lookup.tenantId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: lookup.id },
       include: USER_WITH_ROLES_INCLUDE,
     });
-    if (!user?.tenant?.isActive) return null;
-
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return null;
+    if (!user?.tenant?.isActive || !user.isActive) return null;
 
     return this.toAuthProfile(user);
   }
@@ -227,25 +241,28 @@ export class AuthService implements OnModuleInit {
 
   async validatePayload(payload: JwtPayload) {
     const cacheKey = `jwt:active:${payload.sub}`;
-    const cached = await this.cache.get<boolean>(cacheKey);
+    const cached = await this.cache.get<{ active: boolean; isSuperAdmin?: boolean } | boolean>(cacheKey);
 
     // Cache hit — skip DB entirely
     if (cached !== undefined && cached !== null) {
-      if (!cached) return null;
-      return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin: payload.isSuperAdmin ?? false };
+      const active = typeof cached === 'boolean' ? cached : cached.active;
+      const isSuperAdmin = typeof cached === 'boolean' ? (payload.isSuperAdmin ?? false) : (cached.isSuperAdmin ?? payload.isSuperAdmin ?? false);
+      if (!active) return null;
+      return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin };
     }
 
     // Cache miss — lightweight DB check (only booleans, no relations)
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { isActive: true, tenant: { select: { isActive: true } } },
+      select: { isActive: true, isSuperAdmin: true, tenant: { select: { isActive: true } } },
     });
 
     const active = !!(user?.isActive && user?.tenant?.isActive);
-    await this.cache.set(cacheKey, active, JWT_CACHE_TTL);
+    const isSuperAdmin = user?.isSuperAdmin ?? payload.isSuperAdmin ?? false;
+    await this.cache.set(cacheKey, { active, isSuperAdmin }, JWT_CACHE_TTL);
 
     if (!active) return null;
-    return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin: payload.isSuperAdmin ?? false };
+    return { ...payload, roles: payload.roles ?? [], permissions: payload.permissions ?? [], isSuperAdmin };
   }
 
   /** Force re-check on next request — works across all containers via Redis */

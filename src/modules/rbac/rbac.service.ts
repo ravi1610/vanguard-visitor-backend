@@ -38,6 +38,7 @@ const MODULE_KEYS = [
   'pets',
   'emergencyContacts',
   'units',
+  'residents',
   'permissions',
 ] as const;
 
@@ -173,6 +174,9 @@ export class RbacService {
     @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
 
+  private tenantRoleSyncPromises = new Map<string, Promise<void>>();
+  private tenantRolesSynced = new Set<string>();
+
   private expandLegacyPermissions(keys: string[]): string[] {
     const expanded = new Set(keys);
     const byModule = new Map<string, Set<string>>();
@@ -256,6 +260,31 @@ export class RbacService {
       }
     }
 
+    // Cascade: deny of X.read removes X.view from effective (they are synonymous).
+    // Deny of X.view similarly removes X.read.
+    // This prevents inherited .view permissions from surviving a .read deny.
+    for (const deny of denies) {
+      const lastDot = deny.lastIndexOf('.');
+      if (lastDot < 0) continue;
+      const moduleKey = deny.substring(0, lastDot);
+      const action = deny.substring(lastDot + 1);
+      if (action === 'read') {
+        effective.delete(`${moduleKey}.view`);
+        if (moduleKey === 'visit') {
+          effective.delete('visit.view_history');
+        }
+      } else if (action === 'view') {
+        effective.delete(`${moduleKey}.read`);
+      }
+    }
+    // Visit-specific cascades based on remaining effective permissions
+    if (!effective.has('visit.create') && !effective.has('visit.update')) {
+      effective.delete('visit.checkin');
+    }
+    if (!effective.has('visit.update')) {
+      effective.delete('visit.checkout');
+    }
+
     const inheritedExpanded = this.expandLegacyPermissions(inherited).sort();
     const grantsExpanded = this.expandLegacyPermissions(grants).sort();
     const deniesExpanded = this.expandLegacyPermissions(denies).sort();
@@ -273,7 +302,7 @@ export class RbacService {
     };
   }
 
-  async seedPermissionsIfNeeded() {
+  async seedPermissionsIfNeeded(): Promise<Set<string>> {
     const existing = await this.prisma.permission.findMany({
       select: { key: true },
     });
@@ -288,18 +317,23 @@ export class RbacService {
         skipDuplicates: true,
       });
     }
+    return new Set(toCreate);
   }
 
   /**
    * Optimized: batch-load all roles for a tenant in ONE query,
    * then reconcile missing permissions with a single createMany per role.
+   *
+   * newPermKeys: only permissions in this set are auto-added to existing admin/tenant_owner
+   * roles. Pass an empty Set (default) to skip auto-adding to existing roles.
    */
-  async seedDefaultRolesForTenant(tenantId: string) {
+  async seedDefaultRolesForTenant(tenantId: string, newPermKeys: Set<string> = new Set()) {
     // Single query: get all permissions
     const permissions = await this.prisma.permission.findMany({
       select: { id: true, key: true },
     });
     const keyToId = new Map(permissions.map((p) => [p.key, p.id]));
+    const idToKey = new Map(permissions.map((p) => [p.id, p.key]));
 
     // Single query: get all existing roles + their permissions for this tenant
     const existingRoles = await this.prisma.role.findMany({
@@ -312,19 +346,27 @@ export class RbacService {
       const existing = roleByKey.get(roleKey);
 
       if (existing) {
-        // For system roles (tenant_owner, admin), append any newly added permissions
-        // that are missing. This ensures new permission keys (e.g. permissions.view)
-        // are granted to existing roles without overwriting customizations.
+        // For system roles, append:
+        //   (a) truly new permission keys (just added to PERMISSION_KEYS for the first time)
+        //   (b) the minimum set admin always needs (permissions.*) — prevents a broken UI
+        // Never restore other manually-removed permissions.
         if (roleKey === 'tenant_owner' || roleKey === 'admin') {
+          const MINIMUM_ADMIN_KEYS = new Set([
+            'permissions.read', 'permissions.view', 'permissions.manage',
+            'permissions.create', 'permissions.update', 'permissions.delete',
+          ]);
+          const keysToEnsure = new Set([...newPermKeys, ...MINIMUM_ADMIN_KEYS]);
           const existingPermIds = new Set(
             existing.rolePermissions.map((rp) => rp.permissionId),
           );
           const expectedPermIds = def.permissions
             .map((k) => keyToId.get(k))
             .filter(Boolean) as string[];
-          const missingPermIds = expectedPermIds.filter(
-            (id) => !existingPermIds.has(id),
-          );
+          const missingPermIds = expectedPermIds.filter((id) => {
+            if (existingPermIds.has(id)) return false;
+            const key = idToKey.get(id);
+            return key ? keysToEnsure.has(key) : false;
+          });
           if (missingPermIds.length > 0) {
             await this.prisma.rolePermission.createMany({
               data: missingPermIds.map((permissionId) => ({
@@ -371,7 +413,7 @@ export class RbacService {
    * Sync default role permissions for all tenants.
    * Optimized: processes tenants concurrently (batch of 5) instead of sequentially.
    */
-  async syncAllTenantsDefaultRoles() {
+  async syncAllTenantsDefaultRoles(newPermKeys: Set<string> = new Set()) {
     const tenants = await this.prisma.tenant.findMany({
       select: { id: true },
     });
@@ -380,8 +422,30 @@ export class RbacService {
     const BATCH_SIZE = 5;
     for (let i = 0; i < tenants.length; i += BATCH_SIZE) {
       const batch = tenants.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map((t) => this.seedDefaultRolesForTenant(t.id)));
+      await Promise.all(batch.map((t) => this.seedDefaultRolesForTenant(t.id, newPermKeys)));
     }
+  }
+
+  async ensureTenantRolesSynced(tenantId: string) {
+    if (!tenantId) return;
+    if (this.tenantRolesSynced.has(tenantId)) return;
+
+    const inFlight = this.tenantRoleSyncPromises.get(tenantId);
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    const promise = this.seedDefaultRolesForTenant(tenantId)
+      .then(() => {
+        this.tenantRolesSynced.add(tenantId);
+      })
+      .finally(() => {
+        this.tenantRoleSyncPromises.delete(tenantId);
+      });
+
+    this.tenantRoleSyncPromises.set(tenantId, promise);
+    await promise;
   }
 
   async createRole(
