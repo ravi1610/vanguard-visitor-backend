@@ -40,15 +40,8 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
   });
   if (!creator) throw new NotFoundException('User not found');
 
-  // 🔹 Get creator roles
-  const creatorRoles = await this.prisma.userRole.findMany({
-    where: { userId: creatorUserId },
-    include: { role: true },
-  });
-
-  const isSuperAdmin = creatorRoles.some(
-    (ur) => ur.role.key === 'tenant_owner'
-  );
+  // ✅ FIX: Use global flag instead of role-based check
+  const isSuperAdmin = creator.isSuperAdmin === true;
 
   let tenant: Awaited<ReturnType<typeof this.prisma.tenant.create>>;
 
@@ -79,20 +72,14 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
   // 🔥 STEP 1: ADD GLOBAL SUPER ADMIN TO NEW TENANT
   // =========================================================
 
-  const superAdminUserRole = await this.prisma.userRole.findFirst({
+  // ✅ FIX: Find actual global super admin
+  const superAdmin = await this.prisma.user.findFirst({
     where: {
-      role: {
-        key: 'tenant_owner',
-      },
-    },
-    include: {
-      user: true,
+      isSuperAdmin: true,
     },
   });
 
-  if (superAdminUserRole) {
-    const superAdmin = superAdminUserRole.user;
-
+  if (superAdmin) {
     const existing = await this.prisma.user.findFirst({
       where: {
         tenantId: tenant.id,
@@ -109,6 +96,7 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
           firstName: superAdmin.firstName,
           lastName: superAdmin.lastName,
           isActive: true,
+          isSuperAdmin: true, // ✅ IMPORTANT
         },
       });
 
@@ -153,7 +141,6 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
     throw new NotFoundException(`Role "${roleKey}" not found`);
   }
 
-  // email safe
   let emailToUse = creator.email;
 
   const existingCreator = await this.prisma.user.findFirst({
@@ -175,6 +162,7 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
       firstName: creator.firstName,
       lastName: creator.lastName,
       isActive: true,
+      isSuperAdmin: creator.isSuperAdmin, // ✅ IMPORTANT FIX
     },
   });
 
