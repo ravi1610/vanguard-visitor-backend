@@ -170,6 +170,15 @@ export class ResidentController {
     return this.resident.getDocuments(tenantId, userId, query);
   }
 
+  @Get('documents/global')
+  @ApiOperation({ summary: 'List global (tenant-wide) documents visible to residents (paginated)' })
+  getGlobalDocuments(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: PagedQueryDto,
+  ) {
+    return this.resident.getGlobalDocuments(tenantId, query);
+  }
+
   @Get('documents/:id')
   @ApiOperation({ summary: 'Get single document detail' })
   getDocumentDetail(
@@ -178,6 +187,15 @@ export class ResidentController {
     @Param('id') id: string,
   ) {
     return this.resident.getDocumentDetail(tenantId, userId, id);
+  }
+
+  @Get('documents/global/:id')
+  @ApiOperation({ summary: 'Get a single global (tenant-wide) document detail' })
+  getGlobalDocumentDetail(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.resident.getGlobalDocumentDetail(tenantId, id);
   }
 
   // ── Compliance ───────────────────────────────────────────

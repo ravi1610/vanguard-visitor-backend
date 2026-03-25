@@ -27,14 +27,19 @@ export class DocumentsService {
         documentType: dto.documentType,
         category: dto.category,
         fileUrl: dto.fileUrl,
-        uploadedByUserId: dto.uploadedByUserId ?? userId,
+        // By convention:
+        // - `uploadedByUserId` present => resident-specific document
+        // - `uploadedByUserId` omitted => global document
+        uploadedByUserId: dto.uploadedByUserId ?? null,
       },
     });
   }
 
   async findAll(tenantId: string, query: PagedQueryDto, uploadedByUserId?: string) {
-    const where: { tenantId: string; uploadedByUserId?: string; OR?: object[] } = { tenantId };
-    if (uploadedByUserId) where.uploadedByUserId = uploadedByUserId;
+    // Scope rules:
+    // - if `uploadedByUserId` is provided => return that resident's documents
+    // - if not provided => return global documents only
+    const where: any = { tenantId, uploadedByUserId: uploadedByUserId ?? null };
     applyFilters(where, query.filters);
     const search = query.search?.trim();
     if (search) {
@@ -93,6 +98,7 @@ export class DocumentsService {
   async exportAll(tenantId: string, selectedIds?: string[]) {
     const where: any = { tenantId };
     if (selectedIds?.length) where.id = { in: selectedIds };
+    else where.uploadedByUserId = null; // global documents only
     return this.prisma.document.findMany({ where, orderBy: { createdAt: 'desc' } });
   }
 
