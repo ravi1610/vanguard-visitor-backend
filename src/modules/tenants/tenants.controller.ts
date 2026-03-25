@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -16,6 +18,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
+import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 
 @ApiTags('Tenants')
 @ApiBearerAuth('JWT')
@@ -36,8 +39,17 @@ export class TenantsController {
   @UseGuards(PermissionsGuard)
   @Permissions('tenant.read')
   @ApiOperation({ summary: 'List all tenants' })
-  findAll(@CurrentUser() user: JwtPayload) {
-    return this.tenants.findMany(user.tenantId, user.isSuperAdmin ?? false);
+  findAll(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: PagedQueryDto,
+    @Query('isActive') isActive?: string,
+  ) {
+    return this.tenants.findMany(
+      user.tenantId,
+      user.isSuperAdmin ?? false,
+      query,
+      isActive,
+    );
   }
 
   @Post()
@@ -60,6 +72,14 @@ export class TenantsController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateTenantDto,
   ) {
-    return this.tenants.update(id, user.tenantId, dto);
+    return this.tenants.update(id, user.tenantId, dto, user.isSuperAdmin ?? false);
+  }
+
+  @Delete(':id')
+  @UseGuards(PermissionsGuard)
+  @Permissions('tenant.delete')
+  @ApiOperation({ summary: 'Delete a tenant' })
+  remove(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.tenants.remove(id, user.isSuperAdmin ?? false);
   }
 }

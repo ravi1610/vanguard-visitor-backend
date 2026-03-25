@@ -11,6 +11,7 @@ import { RbacService } from '../rbac/rbac.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { Prisma } from '@prisma/client';
+import { PagedQueryDto } from '../../common/dto/paged-query.dto';
 
 const TENANT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -176,25 +177,63 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
   return tenant;
 }
 
-  async findMany(tenantId: string, isSuperAdmin: boolean) {
-    if (isSuperAdmin) {
-      return this.prisma.tenant.findMany({
+  async findMany(
+    tenantId: string,
+    isSuperAdmin: boolean,
+    query: PagedQueryDto,
+    isActive?: string,
+  ) {
+    const page = Math.max(1, Number(query.page ?? 1));
+    const pageSize = Math.max(1, Number(query.pageSize ?? 25));
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.TenantWhereInput = {};
+
+    if (!isSuperAdmin) {
+      where.id = tenantId;
+    }
+
+    if (isActive != null && isActive !== '') {
+      const normalized = String(isActive).toLowerCase();
+      if (normalized === 'true' || normalized === 'active') where.isActive = true;
+      if (normalized === 'false' || normalized === 'inactive') where.isActive = false;
+    }
+
+    if (query.search?.trim()) {
+      const q = query.search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { slug: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const filterIsActive = query.filters?.isActive;
+    if (filterIsActive != null) {
+      const raw = Array.isArray(filterIsActive) ? filterIsActive[0] : filterIsActive;
+      const val = String(raw).toLowerCase();
+      if (val === 'true' || val === 'active') where.isActive = true;
+      if (val === 'false' || val === 'inactive') where.isActive = false;
+    }
+
+    const sortField = ['name', 'slug', 'createdAt', 'isActive'].includes(query.sortField ?? '')
+      ? (query.sortField as 'name' | 'slug' | 'createdAt' | 'isActive')
+      : 'createdAt';
+    const sortDir: Prisma.SortOrder = query.sortDir === 'asc' ? 'asc' : 'desc';
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.tenant.findMany({
+        where,
         include: {
           _count: { select: { users: true } },
         },
-      });
-    }
+        orderBy: { [sortField]: sortDir },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.tenant.count({ where }),
+    ]);
 
-    const hasManage = await this.prisma.tenant.findFirst({
-      where: { id: tenantId },
-    });
-    if (!hasManage) return [];
-    return this.prisma.tenant.findMany({
-      where: { id: tenantId },
-      include: {
-        _count: { select: { users: true } },
-      },
-    });
+    return { rows, total };
   }
 
   async getMyTenant(tenantId: string) {
@@ -218,8 +257,9 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
     tenantId: string,
     requesterTenantId: string,
     dto: UpdateTenantDto,
+    isSuperAdmin = false,
   ) {
-    if (requesterTenantId !== tenantId) {
+    if (!isSuperAdmin && requesterTenantId !== tenantId) {
       throw new ForbiddenException('Cannot update another tenant');
     }
 
@@ -246,5 +286,21 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
       }
       throw error;
     }
+  }
+
+  async remove(tenantId: string, isSuperAdmin = false) {
+    if (!isSuperAdmin) {
+      throw new ForbiddenException('Only super-admin can delete tenants');
+    }
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const deleted = await this.prisma.tenant.delete({ where: { id: tenantId } });
+    await this.cache.del(`tenant:${tenantId}`);
+    return deleted;
   }
 }
