@@ -424,6 +424,56 @@ export class ResidentService {
     return doc;
   }
 
+  /** Tenant-wide documents (global documents visible to all residents). */
+  async getGlobalDocuments(tenantId: string, query: PagedQueryDto) {
+    const where: Prisma.DocumentWhereInput = { tenantId, uploadedByUserId: null };
+    applyFilters(where as any, query.filters);
+
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { documentType: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 25;
+    const skip = (page - 1) * pageSize;
+    const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
+
+    const [rows, total] = await Promise.all([
+      this.prisma.document.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: sortDir },
+        include: {
+          uploadedBy: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      }),
+      this.prisma.document.count({ where }),
+    ]);
+
+    return { rows, total };
+  }
+
+  async getGlobalDocumentDetail(tenantId: string, id: string) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id, tenantId, uploadedByUserId: null },
+      include: {
+        uploadedBy: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+    if (!doc) throw new NotFoundException('Document not found');
+    return doc;
+  }
+
   // ── Compliance ───────────────────────────────────────────
 
   async getCompliance(tenantId: string, query: PagedQueryDto, status?: string) {
