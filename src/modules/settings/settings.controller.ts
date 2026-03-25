@@ -18,24 +18,28 @@ import {
 } from './dto/upsert-setting.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { SuperAdminGuard } from '../../common/guards/superadmin.guard';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
 @ApiTags('Settings')
 @ApiBearerAuth('JWT')
 @Controller('settings')
-@UseGuards(JwtAuthGuard, SuperAdminGuard)
+@UseGuards(JwtAuthGuard)
 export class SettingsController {
   constructor(private settings: SettingsService) {}
 
   // ── System Settings ─────────────────────────────────────────────
 
   @Get('system')
+  @UseGuards(SuperAdminGuard)
   @ApiOperation({ summary: 'List all system settings (secrets masked)' })
   getSystemSettings() {
     return this.settings.getSystemSettings();
   }
 
   @Put('system')
+  @UseGuards(SuperAdminGuard)
   @ApiOperation({ summary: 'Create or update a system setting' })
   upsertSystemSetting(@Body() dto: UpsertSystemSettingDto) {
     return this.settings.upsertSystemSetting(
@@ -48,6 +52,7 @@ export class SettingsController {
   }
 
   @Delete('system/:key')
+  @UseGuards(SuperAdminGuard)
   @ApiOperation({ summary: 'Delete a system setting' })
   deleteSystemSetting(@Param('key') key: string) {
     return this.settings.deleteSystemSetting(key);
@@ -56,12 +61,15 @@ export class SettingsController {
   // ── Tenant Settings ─────────────────────────────────────────────
 
   @Get('tenant')
+  @UseGuards(PermissionsGuard)
   @ApiOperation({ summary: 'List all settings for the current tenant' })
   getTenantSettings(@CurrentUser('tenantId') tenantId: string) {
     return this.settings.getTenantSettings(tenantId);
   }
 
   @Put('tenant')
+  @UseGuards(PermissionsGuard)
+  @Permissions('settings.manage')
   @ApiOperation({ summary: 'Create or update a tenant setting' })
   upsertTenantSetting(
     @CurrentUser('tenantId') tenantId: string,
@@ -71,6 +79,8 @@ export class SettingsController {
   }
 
   @Delete('tenant/:key')
+  @UseGuards(PermissionsGuard)
+  @Permissions('settings.manage')
   @ApiOperation({ summary: 'Delete a tenant setting' })
   deleteTenantSetting(
     @CurrentUser('tenantId') tenantId: string,

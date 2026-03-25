@@ -81,6 +81,10 @@ export class PermissionsGuard implements CanActivate {
     // Superadmins bypass all permission checks
     if (payload?.isSuperAdmin) return true;
 
+    // Users with an 'admin' role should also bypass permission checks
+    const roles: string[] = payload?.roles ?? [];
+    if (roles.some((r) => r?.trim().toLowerCase() === 'admin')) return true;
+
     const hasAny = requiredPermissions.some((perm) =>
       this.hasPermission(granted, perm, method, path),
     );

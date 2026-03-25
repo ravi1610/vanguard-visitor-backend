@@ -26,75 +26,167 @@ export class TenantsService {
    * Create a new tenant, seed default roles, and clone the creating user
    * into the new tenant as tenant_owner (original user stays in their current tenant).
    */
-  async create(dto: CreateTenantDto, creatorUserId: string) {
-    const slug =
-      dto.slug ??
-      dto.name
-        .toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^a-z0-9-]/g, '');
+async create(dto: CreateTenantDto, creatorUserId: string) {
+  const slug =
+    dto.slug ??
+    dto.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
 
-    // Fetch the creator so we can clone their profile into the new tenant
-    const creator = await this.prisma.user.findUnique({
-      where: { id: creatorUserId },
+  // 🔹 Get creator
+  const creator = await this.prisma.user.findUnique({
+    where: { id: creatorUserId },
+  });
+  if (!creator) throw new NotFoundException('User not found');
+
+  // 🔹 Get creator roles
+  const creatorRoles = await this.prisma.userRole.findMany({
+    where: { userId: creatorUserId },
+    include: { role: true },
+  });
+
+  const isSuperAdmin = creatorRoles.some(
+    (ur) => ur.role.key === 'tenant_owner'
+  );
+
+  let tenant: Awaited<ReturnType<typeof this.prisma.tenant.create>>;
+
+  try {
+    tenant = await this.prisma.tenant.create({
+      data: {
+        name: dto.name,
+        slug,
+        isActive: dto.isActive ?? true,
+      },
     });
-    if (!creator) throw new NotFoundException('User not found');
-
-    let tenant: Awaited<ReturnType<typeof this.prisma.tenant.create>>;
-
-    try {
-      tenant = await this.prisma.tenant.create({
-        data: {
-          name: dto.name,
-          slug,
-          isActive: dto.isActive ?? true,
-        },
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException(
-          `A tenant with slug "${slug}" already exists. Please choose a different name or slug.`,
-        );
-      }
-      throw error;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictException(
+        `A tenant with slug "${slug}" already exists.`,
+      );
     }
+    throw error;
+  }
 
-    // Seed default roles (tenant_owner, receptionist, security, resident)
-    await this.rbac.seedDefaultRolesForTenant(tenant.id);
+  // 🔹 Seed roles
+  await this.rbac.seedDefaultRolesForTenant(tenant.id);
 
-    // Find the tenant_owner role we just created
-    const ownerRole = await this.prisma.role.findUnique({
+  // =========================================================
+  // 🔥 STEP 1: ADD GLOBAL SUPER ADMIN TO NEW TENANT
+  // =========================================================
+
+  const superAdminUserRole = await this.prisma.userRole.findFirst({
+    where: {
+      role: {
+        key: 'tenant_owner',
+      },
+    },
+    include: {
+      user: true,
+    },
+  });
+
+  if (superAdminUserRole) {
+    const superAdmin = superAdminUserRole.user;
+
+    const existing = await this.prisma.user.findFirst({
       where: {
-        tenantId_key: { tenantId: tenant.id, key: 'tenant_owner' },
+        tenantId: tenant.id,
+        email: superAdmin.email,
       },
     });
 
-    // Clone the creator into the new tenant as tenant_owner
-    if (ownerRole) {
-      const clonedUser = await this.prisma.user.create({
+    if (!existing) {
+      const newSuperAdmin = await this.prisma.user.create({
         data: {
           tenantId: tenant.id,
-          email: creator.email,
-          passwordHash: creator.passwordHash,
-          firstName: creator.firstName,
-          lastName: creator.lastName,
+          email: superAdmin.email,
+          passwordHash: superAdmin.passwordHash,
+          firstName: superAdmin.firstName,
+          lastName: superAdmin.lastName,
           isActive: true,
         },
       });
 
+      const ownerRole = await this.prisma.role.findUnique({
+        where: {
+          tenantId_key: {
+            tenantId: tenant.id,
+            key: 'tenant_owner',
+          },
+        },
+      });
+
+      if (!ownerRole) {
+        throw new NotFoundException('tenant_owner role not found');
+      }
+
       await this.prisma.userRole.create({
         data: {
-          userId: clonedUser.id,
+          userId: newSuperAdmin.id,
           roleId: ownerRole.id,
         },
       });
     }
-
-    return tenant;
   }
+
+  // =========================================================
+  // 🔥 STEP 2: ADD CREATOR (ADMIN OR OWNER)
+  // =========================================================
+
+  const roleKey = isSuperAdmin ? 'tenant_owner' : 'admin';
+
+  const roleToAssign = await this.prisma.role.findUnique({
+    where: {
+      tenantId_key: {
+        tenantId: tenant.id,
+        key: roleKey,
+      },
+    },
+  });
+
+  if (!roleToAssign) {
+    throw new NotFoundException(`Role "${roleKey}" not found`);
+  }
+
+  // email safe
+  let emailToUse = creator.email;
+
+  const existingCreator = await this.prisma.user.findFirst({
+    where: {
+      tenantId: tenant.id,
+      email: creator.email,
+    },
+  });
+
+  if (existingCreator) {
+    emailToUse = `${creator.email}_${Date.now()}`;
+  }
+
+  const clonedUser = await this.prisma.user.create({
+    data: {
+      tenantId: tenant.id,
+      email: emailToUse,
+      passwordHash: creator.passwordHash,
+      firstName: creator.firstName,
+      lastName: creator.lastName,
+      isActive: true,
+    },
+  });
+
+  await this.prisma.userRole.create({
+    data: {
+      userId: clonedUser.id,
+      roleId: roleToAssign.id,
+    },
+  });
+
+  return tenant;
+}
 
   async findMany(tenantId: string, isSuperAdmin: boolean) {
     if (isSuperAdmin) {
