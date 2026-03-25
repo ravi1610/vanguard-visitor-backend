@@ -144,13 +144,14 @@ model User {
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  tenantId    String?  @map("tenant_id") // null = global/default roles
-  name        String
-  key         String
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid())
+  tenantId        String?  @map("tenant_id") // null = global/default roles
+  name            String
+  key             String
+  description     String?
+  isSystemDefined Boolean  @default(false) @map("is_system_defined")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   tenant         Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rolePermissions RolePermission[]
