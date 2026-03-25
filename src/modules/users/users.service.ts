@@ -87,6 +87,7 @@ export class UsersService {
     query: PagedQueryDto,
     isActive?: boolean,
     isBoardMember?: boolean,
+    excludeRoleKeys?: string[],
   ) {
     const where: Record<string, unknown> = { tenantId };
     if (roleKey) {
@@ -105,6 +106,14 @@ export class UsersService {
         ...(Array.isArray(where.AND) ? (where.AND as Record<string, unknown>[]) : []),
         { userRoles: { none: { role: { key: 'tenant_owner' } } } },
       ];
+    }
+    if (excludeRoleKeys?.length) {
+      for (const key of excludeRoleKeys) {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? (where.AND as Record<string, unknown>[]) : []),
+          { userRoles: { none: { role: { key } } } },
+        ];
+      }
     }
     applyFilters(where, query.filters, {
       firstName: containsInsensitive('firstName'),

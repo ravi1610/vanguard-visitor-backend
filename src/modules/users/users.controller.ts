@@ -1,5 +1,27 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, StreamableFile, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
@@ -29,9 +51,26 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @Permissions('user.manage', 'residents.read')
   @ApiOperation({ summary: 'List all users with pagination' })
-  @ApiQuery({ name: 'roleKey', required: false, description: 'Filter by role key' })
-  @ApiQuery({ name: 'isActive', required: false, description: 'Filter by active status (true/false)' })
-  @ApiQuery({ name: 'isBoardMember', required: false, description: 'Filter by board member status (true/false)' })
+  @ApiQuery({
+    name: 'roleKey',
+    required: false,
+    description: 'Filter by role key',
+  })
+  @ApiQuery({
+    name: 'isActive',
+    required: false,
+    description: 'Filter by active status (true/false)',
+  })
+  @ApiQuery({
+    name: 'isBoardMember',
+    required: false,
+    description: 'Filter by board member status (true/false)',
+  })
+  @ApiQuery({
+    name: 'excludeRoleKeys',
+    required: false,
+    description: 'Comma-separated role keys to exclude',
+  })
   findAll(
     @CurrentUser('roles') requesterRoles: string[],
     @CurrentUser('tenantId') tenantId: string,
@@ -39,14 +78,26 @@ export class UsersController {
     @Query('roleKey') roleKey?: string,
     @Query('isActive') isActive?: string,
     @Query('isBoardMember') isBoardMember?: string,
+    @Query('excludeRoleKeys') excludeRoleKeys?: string,
   ) {
+    const parsedExcludeRoleKeys = excludeRoleKeys
+      ? excludeRoleKeys
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : undefined;
     return this.users.findAll(
       tenantId,
       requesterRoles,
       roleKey,
       query,
       isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-      isBoardMember === 'true' ? true : isBoardMember === 'false' ? false : undefined,
+      isBoardMember === 'true'
+        ? true
+        : isBoardMember === 'false'
+          ? false
+          : undefined,
+      parsedExcludeRoleKeys,
     );
   }
 
@@ -56,7 +107,11 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @Permissions('user.manage')
   @ApiOperation({ summary: 'Export users as XLSX' })
-  @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated IDs to export' })
+  @ApiQuery({
+    name: 'ids',
+    required: false,
+    description: 'Comma-separated IDs to export',
+  })
   async exportXlsx(
     @CurrentUser('tenantId') tenantId: string,
     @Query('ids') ids?: string,
@@ -65,16 +120,33 @@ export class UsersController {
     @Query('roleKey') roleKey?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const selectedIds = ids ? ids.split(',').map((id) => id.trim()).filter(Boolean) : undefined;
+    const selectedIds = ids
+      ? ids
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
     const rows = await this.users.exportAll(
       tenantId,
       selectedIds,
       isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-      isBoardMember === 'true' ? true : isBoardMember === 'false' ? false : undefined,
+      isBoardMember === 'true'
+        ? true
+        : isBoardMember === 'false'
+          ? false
+          : undefined,
       roleKey,
     );
-    const buffer = this.importExport.buildXlsx(rows as unknown as Record<string, unknown>[], USER_FIELD_MAPPING, 'Users');
-    res?.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="users-export.xlsx"' });
+    const buffer = this.importExport.buildXlsx(
+      rows as unknown as Record<string, unknown>[],
+      USER_FIELD_MAPPING,
+      'Users',
+    );
+    res?.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="users-export.xlsx"',
+    });
     return new StreamableFile(buffer);
   }
 
@@ -83,8 +155,16 @@ export class UsersController {
   @Permissions('user.manage')
   @ApiOperation({ summary: 'Download users import template (XLSX)' })
   exportTemplate(@Res({ passthrough: true }) res: Response) {
-    const buffer = this.importExport.buildTemplate(USER_FIELD_MAPPING, 'Users Template');
-    res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="users-import-template.xlsx"' });
+    const buffer = this.importExport.buildTemplate(
+      USER_FIELD_MAPPING,
+      'Users Template',
+    );
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename="users-import-template.xlsx"',
+    });
     return new StreamableFile(buffer);
   }
 
@@ -93,13 +173,44 @@ export class UsersController {
   @Permissions('user.manage')
   @ApiOperation({ summary: 'Bulk import users from XLSX file' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { const allowed = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']; if (allowed.includes(file.mimetype) || file.originalname.match(/\.xlsx?$/i)) { cb(null, true); } else { cb(new BadRequestException('Only XLSX files are accepted'), false); } } }))
-  async importXlsx(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowed = [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+        ];
+        if (
+          allowed.includes(file.mimetype) ||
+          file.originalname.match(/\.xlsx?$/i)
+        ) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Only XLSX files are accepted'), false);
+        }
+      },
+    }),
+  )
+  async importXlsx(
+    @CurrentUser('tenantId') tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     if (!file) throw new BadRequestException('No file provided');
-    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, USER_FIELD_MAPPING);
+    const { parsedRows, errors } = this.importExport.parseFile(
+      file.buffer,
+      USER_FIELD_MAPPING,
+    );
     const result = await this.users.bulkImport(tenantId, parsedRows);
-    result.errors.push(...errors); result.total += errors.length;
+    result.errors.push(...errors);
+    result.total += errors.length;
     return result;
   }
 
@@ -108,13 +219,41 @@ export class UsersController {
   @Permissions('user.manage')
   @ApiOperation({ summary: 'Bulk import users from CSV file' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.match(/\.csv$/i)) { cb(null, true); } else { cb(new BadRequestException('Only CSV files are accepted'), false); } } }))
-  async importCsv(@CurrentUser('tenantId') tenantId: string, @UploadedFile() file: Express.Multer.File) {
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.originalname.match(/\.csv$/i)
+        ) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Only CSV files are accepted'), false);
+        }
+      },
+    }),
+  )
+  async importCsv(
+    @CurrentUser('tenantId') tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     if (!file) throw new BadRequestException('No file provided');
-    const { parsedRows, errors } = this.importExport.parseFile(file.buffer, USER_FIELD_MAPPING);
+    const { parsedRows, errors } = this.importExport.parseFile(
+      file.buffer,
+      USER_FIELD_MAPPING,
+    );
     const result = await this.users.bulkImport(tenantId, parsedRows);
-    result.errors.push(...errors); result.total += errors.length;
+    result.errors.push(...errors);
+    result.total += errors.length;
     return result;
   }
 
@@ -150,10 +289,7 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @Permissions('user.manage')
   @ApiOperation({ summary: 'Delete a user' })
-  remove(
-    @CurrentUser('tenantId') tenantId: string,
-    @Param('id') id: string,
-  ) {
+  remove(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string) {
     return this.users.remove(tenantId, id);
   }
 
@@ -173,17 +309,26 @@ export class UsersController {
       storage: diskStorage({
         destination: './uploads/photos',
         filename: (_req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
           cb(null, uniqueSuffix + extname(file.originalname));
         },
       }),
       limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
       fileFilter: (_req, file, cb) => {
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        const allowedMimes = [
+          'image/jpeg',
+          'image/png',
+          'image/gif',
+          'image/webp',
+        ];
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'), false);
+          cb(
+            new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'),
+            false,
+          );
         }
       },
     }),
