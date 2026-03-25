@@ -92,6 +92,16 @@ const PERMISSION_KEYS = [
   'permissions.manage',
 ] as const;
 
+// Keys of roles that are always system-defined and can never be created or
+// claimed by user-defined custom roles.
+const SYSTEM_ROLE_KEYS = new Set([
+  'tenant_owner',
+  'admin',
+  'receptionist',
+  'security',
+  'resident',
+]);
+
 const DEFAULT_ROLES: Record<
   string,
   { name: string; description: string; permissions: readonly string[] }
@@ -327,7 +337,10 @@ export class RbacService {
    * newPermKeys: only permissions in this set are auto-added to existing admin/tenant_owner
    * roles. Pass an empty Set (default) to skip auto-adding to existing roles.
    */
-  async seedDefaultRolesForTenant(tenantId: string, newPermKeys: Set<string> = new Set()) {
+  async seedDefaultRolesForTenant(
+    tenantId: string,
+    newPermKeys: Set<string> = new Set(),
+  ) {
     // Single query: get all permissions
     const permissions = await this.prisma.permission.findMany({
       select: { id: true, key: true },
@@ -346,14 +359,26 @@ export class RbacService {
       const existing = roleByKey.get(roleKey);
 
       if (existing) {
+        // Ensure existing system roles have isSystemDefined = true (migration for existing data).
+        if (!existing.isSystemDefined) {
+          await this.prisma.role.update({
+            where: { id: existing.id },
+            data: { isSystemDefined: true },
+          });
+        }
+
         // For system roles, append:
         //   (a) truly new permission keys (just added to PERMISSION_KEYS for the first time)
         //   (b) the minimum set admin always needs (permissions.*) — prevents a broken UI
         // Never restore other manually-removed permissions.
         if (roleKey === 'tenant_owner' || roleKey === 'admin') {
           const MINIMUM_ADMIN_KEYS = new Set([
-            'permissions.read', 'permissions.view', 'permissions.manage',
-            'permissions.create', 'permissions.update', 'permissions.delete',
+            'permissions.read',
+            'permissions.view',
+            'permissions.manage',
+            'permissions.create',
+            'permissions.update',
+            'permissions.delete',
           ]);
           const keysToEnsure = new Set([...newPermKeys, ...MINIMUM_ADMIN_KEYS]);
           const existingPermIds = new Set(
@@ -388,6 +413,7 @@ export class RbacService {
           name: def.name,
           key: roleKey,
           description: def.description,
+          isSystemDefined: true,
         },
       });
 
@@ -422,7 +448,9 @@ export class RbacService {
     const BATCH_SIZE = 5;
     for (let i = 0; i < tenants.length; i += BATCH_SIZE) {
       const batch = tenants.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map((t) => this.seedDefaultRolesForTenant(t.id, newPermKeys)));
+      await Promise.all(
+        batch.map((t) => this.seedDefaultRolesForTenant(t.id, newPermKeys)),
+      );
     }
   }
 
@@ -456,6 +484,11 @@ export class RbacService {
     if (!trimmedName) throw new BadRequestException('Role name is required');
     const normalizedKey = normalizeRoleKey(dto.key ?? '');
     if (!normalizedKey) throw new BadRequestException('Role key is required');
+    if (SYSTEM_ROLE_KEYS.has(normalizedKey)) {
+      throw new BadRequestException(
+        `Role key "${normalizedKey}" is reserved for system use`,
+      );
+    }
     await this.ensureUniqueRoleKey(tenantId, normalizedKey);
     const role = await this.prisma.role.create({
       data: {
@@ -478,6 +511,16 @@ export class RbacService {
       where: { id: roleId, tenantId },
     });
     if (!role) throw new NotFoundException('Role not found');
+
+    if (
+      role.isSystemDefined &&
+      (dto.name !== undefined || dto.key !== undefined)
+    ) {
+      throw new BadRequestException(
+        'System-defined roles cannot have their name or key changed',
+      );
+    }
+
     const updates: {
       name?: string;
       key?: string;
@@ -514,8 +557,8 @@ export class RbacService {
       where: { id: roleId, tenantId },
     });
     if (!role) throw new NotFoundException('Role not found');
-    if (role.key === 'tenant_owner') {
-      throw new BadRequestException('System role cannot be deleted');
+    if (role.isSystemDefined) {
+      throw new BadRequestException('System-defined roles cannot be deleted');
     }
     await this.prisma.role.delete({ where: { id: roleId } });
     await this.cache.del(`rbac:roles:${tenantId}`);
@@ -562,6 +605,7 @@ export class RbacService {
         key: role.key,
         name: role.name,
         description: role.description,
+        isSystemDefined: role.isSystemDefined,
         permissionKeys: role.rolePermissions
           .map((rp) => rp.permission.key)
           .sort(),
