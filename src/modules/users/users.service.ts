@@ -77,6 +77,48 @@ export class UsersService {
         userRoles: { include: { role: true } },
       },
     });
+    // persist assigned tenants for this user (if provided)
+    if (dto.tenantIds && dto.tenantIds.length) {
+      const tenantRows = dto.tenantIds.map((t) => ({ userId: user.id, tenantId: t }));
+      await this.prisma.userTenant.createMany({ data: tenantRows, skipDuplicates: true });
+      // If creating an admin and additional tenant assignments were provided,
+      // ensure a corresponding user record exists in each assigned tenant so
+      // the admin can switch to that tenant. We copy the same password hash
+      // and assign the equivalent role in the target tenant when possible.
+      if ((dto.roleKey ?? 'receptionist') === 'admin') {
+        for (const t of dto.tenantIds) {
+          if (t === tenantId) continue; // already created for primary tenant
+          const existingInTarget = await this.prisma.user.findFirst({ where: { tenantId: t, email } });
+          // find admin role in target tenant
+          const targetRole = await this.prisma.role.findFirst({ where: { tenantId: t, key: 'admin' } });
+          if (existingInTarget) {
+            // ensure the user has the admin role in the target tenant
+            if (targetRole) {
+              await this.prisma.userRole.upsert({
+                where: { userId_roleId: { userId: existingInTarget.id, roleId: targetRole.id } },
+                create: { userId: existingInTarget.id, roleId: targetRole.id },
+                update: {},
+              });
+            }
+            continue;
+          }
+          // create user record in target tenant
+          const created = await this.prisma.user.create({
+            data: {
+              tenantId: t,
+              email,
+              passwordHash,
+              firstName: dto.firstName,
+              lastName: dto.lastName,
+              isActive: dto.isActive ?? true,
+              userRoles: targetRole ? { create: { roleId: targetRole.id } } : undefined,
+            },
+          });
+          // also persist mapping row for the target user to link to this logical user
+          await this.prisma.userTenant.createMany({ data: [{ userId: created.id, tenantId: t }], skipDuplicates: true });
+        }
+      }
+    }
     return this.omitPassword(user);
   }
 
@@ -189,6 +231,7 @@ export class UsersService {
       include: {
         userRoles: { include: { role: true } },
         unit: { select: { id: true, unitNumber: true, building: true } },
+        userTenants: { select: { tenantId: true } },
         _count: {
           select: {
             hostedVisits: true,
@@ -203,11 +246,37 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
+
+    // Aggregate tenant assignments across all user records that share the same
+    // email so the UI (when viewed by a super-admin) can show every tenant
+    // the logical user has access to regardless of which tenant-specific
+    // user record is currently being edited.
+    try {
+      const userRecords = await this.prisma.user.findMany({
+        where: { email: user.email, isActive: true, tenant: { isActive: true } },
+        select: { id: true, tenantId: true },
+      });
+      const userIds = userRecords.map((r) => r.id);
+      const tenantIdSet = new Set<string>(userRecords.map((r) => r.tenantId));
+      if (userIds.length) {
+        const mappings = await this.prisma.userTenant.findMany({ where: { userId: { in: userIds } }, select: { tenantId: true } });
+        for (const m of mappings) tenantIdSet.add(m.tenantId);
+      }
+      (user as any).userTenants = Array.from(tenantIdSet).map((t) => ({ tenantId: t }));
+    } catch {
+      // ignore any aggregation errors and fall back to the per-record mappings
+    }
+
     return this.omitPassword(user);
   }
 
   async update(tenantId: string, id: string, dto: UpdateUserDto) {
     await this.findOne(tenantId, id);
+    // load current mapping and user record to compute additions/removals
+    const currentUserRecord = await this.prisma.user.findUnique({ where: { id }, select: { email: true, passwordHash: true, tenantId: true } });
+    if (!currentUserRecord) throw new NotFoundException('User not found');
+    const existingTenantRows = await this.prisma.userTenant.findMany({ where: { userId: id } });
+    const existingTenantIds = new Set(existingTenantRows.map((r) => r.tenantId));
     const data: Record<string, unknown> = {};
     if (dto.firstName != null) data.firstName = dto.firstName;
     if (dto.lastName != null) data.lastName = dto.lastName;
@@ -235,18 +304,142 @@ export class UsersService {
         where: { tenantId, key: dto.roleKey },
       });
       if (!role) throw new NotFoundException(`Role ${dto.roleKey} not found`);
-      await this.prisma.$transaction([
+      const tx: any[] = [
         this.prisma.user.update({ where: { id }, data }),
         this.prisma.userRole.deleteMany({ where: { userId: id } }),
         this.prisma.userRole.create({ data: { userId: id, roleId: role.id } }),
-      ]);
+      ];
+      // handle tenant assignments if provided
+      const newTenantIds = dto.tenantIds !== undefined ? dto.tenantIds : Array.from(existingTenantIds);
+      if (dto.tenantIds !== undefined) {
+        tx.push(this.prisma.userTenant.deleteMany({ where: { userId: id } }));
+        if (dto.tenantIds && dto.tenantIds.length) {
+          const tenantRows = dto.tenantIds.map((t) => ({ userId: id, tenantId: t }));
+          tx.push(this.prisma.userTenant.createMany({ data: tenantRows, skipDuplicates: true }));
+        }
+      }
+      await this.prisma.$transaction(tx);
+      // after transaction, reconcile user records across tenants
+      const added = (dto.tenantIds ?? []).filter((t) => !existingTenantIds.has(t));
+      const removed = Array.from(existingTenantIds).filter((t) => !(dto.tenantIds ?? []).includes(t));
+      // create duplicates in added tenants (if role is admin)
+      if ((dto.roleKey ?? '').trim() === 'admin' && added.length) {
+        for (const t of added) {
+          if (t === tenantId) continue;
+          const existingInTarget = await this.prisma.user.findFirst({ where: { tenantId: t, email: currentUserRecord.email } });
+          const targetRole = await this.prisma.role.findFirst({ where: { tenantId: t, key: 'admin' } });
+          if (existingInTarget) {
+            if (targetRole) {
+              await this.prisma.userRole.upsert({
+                where: { userId_roleId: { userId: existingInTarget.id, roleId: targetRole.id } },
+                create: { userId: existingInTarget.id, roleId: targetRole.id },
+                update: {},
+              });
+            }
+            continue;
+          }
+          const created = await this.prisma.user.create({
+            data: {
+              tenantId: t,
+              email: currentUserRecord.email,
+              passwordHash: currentUserRecord.passwordHash,
+              firstName: dto.firstName ?? '',
+              lastName: dto.lastName ?? '',
+              isActive: dto.isActive ?? true,
+              userRoles: targetRole ? { create: { roleId: targetRole.id } } : undefined,
+            },
+          });
+          await this.prisma.userTenant.createMany({ data: [{ userId: created.id, tenantId: t }], skipDuplicates: true });
+        }
+      }
+      // remove user records in removed tenants (attempt best-effort)
+      if (removed.length) {
+        for (const t of removed) {
+          try {
+            const duplicate = await this.prisma.user.findFirst({ where: { tenantId: t, email: currentUserRecord.email } });
+            if (duplicate && duplicate.id !== id) {
+              await this.prisma.user.delete({ where: { id: duplicate.id } });
+            }
+          } catch {
+            // ignore failures to avoid blocking the update
+          }
+        }
+        // Also remove any lingering user_tenant mappings for the removed tenants
+        try {
+          await this.prisma.userTenant.deleteMany({ where: { tenantId: { in: removed }, user: { email: currentUserRecord.email } } });
+        } catch {
+          // ignore
+        }
+      }
       const user = await this.prisma.user.findUnique({
         where: { id },
         include: { userRoles: { include: { role: true } } },
       });
       return this.omitPassword(user!);
     }
-
+    // handle tenant assignments when roleKey not changed
+    if (dto.tenantIds !== undefined) {
+      // update user data and replace tenant assignments
+      await this.prisma.$transaction([
+        this.prisma.user.update({ where: { id }, data }),
+        this.prisma.userTenant.deleteMany({ where: { userId: id } }),
+        ...(dto.tenantIds && dto.tenantIds.length
+          ? [this.prisma.userTenant.createMany({ data: dto.tenantIds.map((t) => ({ userId: id, tenantId: t })), skipDuplicates: true })]
+          : []),
+      ]);
+      // reconcile duplicates: create in added tenants and remove from removed tenants
+      const added = (dto.tenantIds ?? []).filter((t) => !existingTenantIds.has(t));
+      const removed = Array.from(existingTenantIds).filter((t) => !(dto.tenantIds ?? []).includes(t));
+      // if user is admin in this tenant, ensure duplicates in added tenants
+      if ((dto.roleKey ?? '').trim() === 'admin' || (dto.roleKey === undefined && (await this.prisma.userRole.findFirst({ where: { userId: id }, include: { role: true } }))?.role?.key === 'admin')) {
+        for (const t of added) {
+          if (t === tenantId) continue;
+          const existingInTarget = await this.prisma.user.findFirst({ where: { tenantId: t, email: currentUserRecord.email } });
+          const targetRole = await this.prisma.role.findFirst({ where: { tenantId: t, key: 'admin' } });
+          if (existingInTarget) {
+            if (targetRole) {
+              await this.prisma.userRole.upsert({
+                where: { userId_roleId: { userId: existingInTarget.id, roleId: targetRole.id } },
+                create: { userId: existingInTarget.id, roleId: targetRole.id },
+                update: {},
+              });
+            }
+            continue;
+          }
+          const created = await this.prisma.user.create({
+            data: {
+              tenantId: t,
+              email: currentUserRecord.email,
+              passwordHash: currentUserRecord.passwordHash,
+              firstName: dto.firstName ?? '',
+              lastName: dto.lastName ?? '',
+              isActive: dto.isActive ?? true,
+              userRoles: targetRole ? { create: { roleId: targetRole.id } } : undefined,
+            },
+          });
+          await this.prisma.userTenant.createMany({ data: [{ userId: created.id, tenantId: t }], skipDuplicates: true });
+        }
+      }
+      if (removed.length) {
+        for (const t of removed) {
+          try {
+            const duplicate = await this.prisma.user.findFirst({ where: { tenantId: t, email: currentUserRecord.email } });
+            if (duplicate && duplicate.id !== id) {
+              await this.prisma.user.delete({ where: { id: duplicate.id } });
+            }
+          } catch {
+            // ignore
+          }
+        }
+          try {
+            await this.prisma.userTenant.deleteMany({ where: { tenantId: { in: removed }, user: { email: currentUserRecord.email } } });
+          } catch {
+            // ignore
+          }
+      }
+      const user = await this.prisma.user.findUnique({ where: { id }, include: { userRoles: { include: { role: true } } } });
+      return this.omitPassword(user!);
+    }
     const user = await this.prisma.user.update({
       where: { id },
       data,

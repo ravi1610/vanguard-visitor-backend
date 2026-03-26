@@ -18,6 +18,7 @@ model Tenant {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   users           User[]
+  userTenants     UserTenant[]
   roles           Role[]
   visitors        Visitor[]
   visits          Visit[]
@@ -118,6 +119,7 @@ model User {
 
   tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit                 Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  userTenants          UserTenant[]
   userRoles            UserRole[]
   userPermissions      UserPermission[]
   refreshTokens        RefreshToken[]
@@ -199,6 +201,17 @@ model UserRole {
 
   @@id([userId, roleId])
   @@map("user_roles")
+}
+
+model UserTenant {
+  userId   String @map("user_id")
+  tenantId String @map("tenant_id")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tenantId])
+  @@map("user_tenants")
 }
 
 model UserPermission {
