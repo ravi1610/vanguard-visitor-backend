@@ -72,6 +72,7 @@ export class UsersController {
     description: 'Comma-separated role keys to exclude',
   })
   findAll(
+    @CurrentUser('sub') requesterId: string,
     @CurrentUser('roles') requesterRoles: string[],
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: PagedQueryDto,
@@ -88,6 +89,7 @@ export class UsersController {
       : undefined;
     return this.users.findAll(
       tenantId,
+      requesterId,
       requesterRoles,
       roleKey,
       query,

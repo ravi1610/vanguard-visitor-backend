@@ -82,6 +82,7 @@ export class UsersService {
 
   async findAll(
     tenantId: string,
+    requesterId: string | undefined,
     requesterRoles: string[] | undefined,
     roleKey: string | undefined,
     query: PagedQueryDto,
@@ -100,11 +101,27 @@ export class UsersService {
       where.isBoardMember = isBoardMember;
     }
     const isTenantOwner = (requesterRoles ?? []).includes('tenant_owner');
+    const isAdmin = (requesterRoles ?? []).includes('admin');
+
     if (!isTenantOwner) {
       where.isSuperAdmin = false;
       where.AND = [
         ...(Array.isArray(where.AND) ? (where.AND as Record<string, unknown>[]) : []),
         { userRoles: { none: { role: { key: 'tenant_owner' } } } },
+      ];
+    }
+
+    // If the requester is a tenant-level admin (but not tenant_owner), hide other admin users
+    // so admins only see themselves among admin users. Keep other non-admin roles visible.
+    if (isAdmin && !isTenantOwner) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? (where.AND as Record<string, unknown>[]) : []),
+        {
+          OR: [
+            { userRoles: { none: { role: { key: 'admin' } } } },
+            ...(requesterId ? [{ id: requesterId }] : []),
+          ],
+        },
       ];
     }
     if (excludeRoleKeys?.length) {
