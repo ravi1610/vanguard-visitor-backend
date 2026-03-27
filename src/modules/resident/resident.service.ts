@@ -260,16 +260,32 @@ export class ResidentService {
   // ── Packages ─────────────────────────────────────────────
 
   async getPackages(tenantId: string, userId: string, query: PagedQueryDto, status?: string) {
-    const where: any = { tenantId, recipientId: userId };
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { firstName: true, lastName: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const fullName = `${user.firstName} ${user.lastName}`.trim();
+
+    // Residents should see packages addressed to them.
+    // Fallback: if `recipientId` is missing (legacy data), match by `recipientName` + resident full name.
+    const recipientOr: any[] = [{ recipientId: userId }];
+    if (fullName) recipientOr.push({ recipientId: null, recipientName: { equals: fullName, mode: 'insensitive' } });
+
+    const where: any = { tenantId, AND: [{ OR: recipientOr }] };
     if (status) where.status = status;
     applyFilters(where, query.filters, { status: equals('status') });
 
     const search = query.search?.trim();
     if (search) {
-      where.OR = [
-        { trackingNumber: { contains: search, mode: 'insensitive' } },
-        { carrier: { contains: search, mode: 'insensitive' } },
-      ];
+      // Keep recipient visibility constraints (AND/OR) intact while applying search.
+      where.AND.push({
+        OR: [
+          { trackingNumber: { contains: search, mode: 'insensitive' } },
+          { carrier: { contains: search, mode: 'insensitive' } },
+        ],
+      });
     }
 
     const page = query.page ?? 1;
@@ -292,8 +308,19 @@ export class ResidentService {
   }
 
   async getPackageDetail(tenantId: string, userId: string, packageId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { firstName: true, lastName: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const fullName = `${user.firstName} ${user.lastName}`.trim();
+
+    const recipientOr: any[] = [{ recipientId: userId }];
+    if (fullName) recipientOr.push({ recipientId: null, recipientName: { equals: fullName, mode: 'insensitive' } });
+
     const pkg = await this.prisma.package.findFirst({
-      where: { id: packageId, tenantId, recipientId: userId },
+      where: { id: packageId, tenantId, OR: recipientOr },
       include: PACKAGE_INCLUDE,
     });
     if (!pkg) throw new NotFoundException('Package not found');
