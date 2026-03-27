@@ -15,7 +15,7 @@ export const COMPLIANCE_FIELD_MAPPING: FieldMapping[] = [
   { field: 'notes', header: 'Notes' },
 ];
 
-const COMPLIANCE_SORT_FIELDS = ['name', 'dueDate', 'status', 'category'] as const;
+const COMPLIANCE_SORT_FIELDS = ['name', 'dueDate', 'status', 'createdAt'] as const;
 
 @Injectable()
 export class ComplianceService {
@@ -28,9 +28,11 @@ export class ComplianceService {
         name: dto.name,
         dueDate: new Date(dto.dueDate),
         status: dto.status ?? 'pending',
-        category: dto.category,
+        categoryId: dto.categoryId,
         notes: dto.notes,
+        fileUrl: dto.fileUrl,
       },
+      include: { category: { select: { id: true, name: true } } },
     });
   }
 
@@ -46,7 +48,7 @@ export class ComplianceService {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } },
+        { category: { is: { name: { contains: search, mode: 'insensitive' } } } },
         { notes: { contains: search, mode: 'insensitive' } },
       ];
     }
@@ -61,6 +63,7 @@ export class ComplianceService {
         skip,
         take: pageSize,
         orderBy: { [sortField]: sortDir },
+        include: { category: { select: { id: true, name: true } } },
       }),
       this.prisma.complianceItem.count({ where }),
     ]);
@@ -70,6 +73,7 @@ export class ComplianceService {
   async findOne(tenantId: string, id: string) {
     const item = await this.prisma.complianceItem.findFirst({
       where: { id, tenantId },
+      include: { category: { select: { id: true, name: true } } },
     });
     if (!item) throw new NotFoundException('Compliance item not found');
     return item;
@@ -83,9 +87,11 @@ export class ComplianceService {
         ...(dto.name != null && { name: dto.name }),
         ...(dto.dueDate != null && { dueDate: new Date(dto.dueDate) }),
         ...(dto.status !== undefined && { status: dto.status }),
-        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
+        ...(dto.fileUrl !== undefined && { fileUrl: dto.fileUrl }),
       },
+      include: { category: { select: { id: true, name: true } } },
     });
   }
 
@@ -100,7 +106,12 @@ export class ComplianceService {
     const where: any = { tenantId };
     if (selectedIds?.length) where.id = { in: selectedIds };
     if (status) where.status = status;
-    return this.prisma.complianceItem.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const rows = await this.prisma.complianceItem.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { category: { select: { id: true, name: true } } },
+    });
+    return rows.map((row) => ({ ...row, category: row.category?.name ?? null }));
   }
 
   async bulkImport(tenantId: string, rows: Record<string, unknown>[]): Promise<ImportResult> {
@@ -114,7 +125,15 @@ export class ComplianceService {
         const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
         if (row.dueDate) { const d = parseDateSafe(row.dueDate); if (d) data.dueDate = d; }
         if (row.status) data.status = String(row.status);
-        if (row.category) data.category = String(row.category);
+        if (row.category) {
+          const categoryName = String(row.category).trim();
+          if (categoryName) {
+            const category = await this.prisma.complianceCategory.findFirst({
+              where: { name: { equals: categoryName, mode: 'insensitive' } },
+            });
+            if (category) data.categoryId = category.id;
+          }
+        }
         if (row.notes) data.notes = String(row.notes);
         await this.prisma.complianceItem.create({ data: data as any });
         result.created++;

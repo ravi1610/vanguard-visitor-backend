@@ -516,7 +516,7 @@ export class ResidentService {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } },
+        { category: { is: { name: { contains: search, mode: 'insensitive' } } } },
       ];
     }
 
@@ -531,6 +531,7 @@ export class ResidentService {
         skip,
         take: pageSize,
         orderBy: { createdAt: sortDir },
+        include: { category: { select: { id: true, name: true } } },
       }),
       this.prisma.complianceItem.count({ where }),
     ]);
@@ -541,6 +542,7 @@ export class ResidentService {
   async getComplianceDetail(tenantId: string, id: string) {
     const item = await this.prisma.complianceItem.findFirst({
       where: { id, tenantId },
+      include: { category: { select: { id: true, name: true } } },
     });
     if (!item) throw new NotFoundException('Compliance item not found');
     return item;

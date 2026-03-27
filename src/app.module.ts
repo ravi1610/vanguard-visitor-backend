@@ -20,6 +20,7 @@ import { DepartmentModule } from './modules/department/department.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { ComplianceCategoryModule } from './modules/compliance-category/compliance-category.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { DocumentCategoryModule } from './modules/document-category/document-category.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
@@ -117,6 +118,7 @@ import configuration from './config/configuration';
     VehiclesModule,
     VendorsModule,
     ComplianceModule,
+    ComplianceCategoryModule,
     DocumentsModule,
     DocumentCategoryModule,
     SpacesModule,
