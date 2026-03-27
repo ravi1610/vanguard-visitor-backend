@@ -182,6 +182,7 @@ if (!isSuperAdmin) {
     isSuperAdmin: boolean,
     query: PagedQueryDto,
     isActive?: string,
+    userId?: string,
   ) {
     const page = Math.max(1, Number(query.page ?? 1));
     const pageSize = Math.max(1, Number(query.pageSize ?? 25));
@@ -190,7 +191,22 @@ if (!isSuperAdmin) {
     const where: Prisma.TenantWhereInput = {};
 
     if (!isSuperAdmin) {
-      where.id = tenantId;
+      // Collect all tenant IDs this user has access to (same email across tenants)
+      let accessibleTenantIds: string[] = [tenantId];
+      if (userId) {
+        const currentUser = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true },
+        });
+        if (currentUser?.email) {
+          const userRecords = await this.prisma.user.findMany({
+            where: { email: currentUser.email },
+            select: { tenantId: true },
+          });
+          accessibleTenantIds = userRecords.map((u) => u.tenantId).filter(Boolean);
+        }
+      }
+      where.id = { in: accessibleTenantIds };
     }
 
     if (isActive != null && isActive !== '') {

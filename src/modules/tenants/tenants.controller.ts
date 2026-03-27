@@ -49,6 +49,7 @@ export class TenantsController {
       user.isSuperAdmin ?? false,
       query,
       isActive,
+      user.sub,
     );
   }
 
