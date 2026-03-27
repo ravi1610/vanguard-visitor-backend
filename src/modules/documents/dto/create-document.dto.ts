@@ -11,7 +11,7 @@ export class CreateDocumentDto {
 
   @IsOptional()
   @IsString()
-  category?: string;
+  categoryId?: string;
 
   @IsOptional()
   @IsString()

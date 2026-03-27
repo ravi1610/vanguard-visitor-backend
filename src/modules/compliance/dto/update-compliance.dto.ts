@@ -17,9 +17,13 @@ export class UpdateComplianceItemDto {
 
   @IsOptional()
   @IsString()
-  category?: string;
+  categoryId?: string;
 
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  fileUrl?: string;
 }

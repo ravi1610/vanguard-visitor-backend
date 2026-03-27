@@ -13,7 +13,7 @@ export const DOCUMENT_FIELD_MAPPING: FieldMapping[] = [
   { field: 'fileUrl', header: 'File URL' },
 ];
 
-const DOC_SORT_FIELDS = ['name', 'documentType', 'category', 'createdAt'] as const;
+const DOC_SORT_FIELDS = ['name', 'documentType', 'createdAt'] as const;
 
 @Injectable()
 export class DocumentsService {
@@ -25,7 +25,7 @@ export class DocumentsService {
         tenantId,
         name: dto.name,
         documentType: dto.documentType,
-        category: dto.category,
+        categoryId: dto.categoryId,
         fileUrl: dto.fileUrl,
         // By convention:
         // - `uploadedByUserId` present => resident-specific document
@@ -45,7 +45,7 @@ export class DocumentsService {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } },
+        { category: { is: { name: { contains: search, mode: 'insensitive' } } } },
         { documentType: { contains: search, mode: 'insensitive' } },
       ];
     }
@@ -60,7 +60,10 @@ export class DocumentsService {
         skip,
         take: pageSize,
         orderBy: { [sortField]: sortDir },
-        include: { uploadedBy: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        include: {
+          uploadedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          category: { select: { id: true, name: true } },
+        },
       }),
       this.prisma.document.count({ where }),
     ]);
@@ -70,6 +73,7 @@ export class DocumentsService {
   async findOne(tenantId: string, id: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, tenantId },
+      include: { category: { select: { id: true, name: true } } },
     });
     if (!doc) throw new NotFoundException('Document not found');
     return doc;
@@ -84,9 +88,10 @@ export class DocumentsService {
         ...(dto.documentType !== undefined && {
           documentType: dto.documentType,
         }),
-        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
         ...(dto.fileUrl !== undefined && { fileUrl: dto.fileUrl }),
       },
+      include: { category: { select: { id: true, name: true } } },
     });
   }
 
@@ -99,7 +104,12 @@ export class DocumentsService {
     const where: any = { tenantId };
     if (selectedIds?.length) where.id = { in: selectedIds };
     else where.uploadedByUserId = null; // global documents only
-    return this.prisma.document.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const rows = await this.prisma.document.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { category: { select: { id: true, name: true } } },
+    });
+    return rows.map((row) => ({ ...row, category: row.category?.name ?? null }));
   }
 
   async bulkImport(tenantId: string, rows: Record<string, unknown>[], userId?: string): Promise<ImportResult> {
@@ -112,7 +122,15 @@ export class DocumentsService {
         if (existing) { result.skipped++; result.errors.push({ row: i + 2, message: `Duplicate document: ${row.name}` }); continue; }
         const data: Record<string, unknown> = { tenantId, name: String(row.name ?? '') };
         if (row.documentType) data.documentType = String(row.documentType);
-        if (row.category) data.category = String(row.category);
+        if (row.category) {
+          const categoryName = String(row.category).trim();
+          if (categoryName) {
+            const category = await this.prisma.documentCategory.findFirst({
+              where: { name: { equals: categoryName, mode: 'insensitive' } },
+            });
+            if (category) data.categoryId = category.id;
+          }
+        }
         if (row.fileUrl) data.fileUrl = String(row.fileUrl);
         if (userId) data.uploadedByUserId = userId;
         await this.prisma.document.create({ data: data as any });

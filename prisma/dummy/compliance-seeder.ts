@@ -11,6 +11,11 @@ export async function seedComplianceItems(
 ): Promise<void> {
   const { tenantId, counts } = ctx;
   const count = counts.compliance;
+  const categories = await prisma.complianceCategory.findMany({
+    where: { name: { in: CATEGORIES as unknown as string[] } },
+    select: { id: true, name: true },
+  });
+  const categoryIdByName = Object.fromEntries(categories.map((c) => [c.name, c.id]));
 
   const data = Array.from({ length: count }, (_, i) => ({
     id: `seed-comp-${i + 1}`,
@@ -18,7 +23,7 @@ export async function seedComplianceItems(
     name: `Compliance Item ${i + 1}`,
     dueDate: dateOffset((i - count / 2) * 86400000),
     status: at(i, STATUSES),
-    category: at(i, CATEGORIES),
+    categoryId: categoryIdByName[at(i, CATEGORIES)],
     notes: i % 3 === 0 ? `Notes for item ${i + 1}` : null,
   }));
 

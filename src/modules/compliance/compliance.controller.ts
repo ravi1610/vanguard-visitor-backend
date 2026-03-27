@@ -17,6 +17,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { ComplianceService, COMPLIANCE_FIELD_MAPPING } from './compliance.service';
 import { CreateComplianceItemDto } from './dto/create-compliance.dto';
@@ -121,10 +123,38 @@ export class ComplianceController {
   @UseGuards(PermissionsGuard)
   @Permissions('compliance.manage')
   @ApiOperation({ summary: 'Create a new compliance item' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        dueDate: { type: 'string' },
+        status: { type: 'string' },
+        categoryId: { type: 'string' },
+        notes: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['name', 'dueDate'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/compliance',
+        filename: (_req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, uniqueSuffix + extname(file.originalname));
+        },
+      }),
+    }),
+  )
   create(
     @CurrentUser('tenantId') tenantId: string,
     @Body() dto: CreateComplianceItemDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
+    if (file) dto.fileUrl = `/uploads/compliance/${file.filename}`;
     return this.compliance.create(tenantId, dto);
   }
 
@@ -132,11 +162,39 @@ export class ComplianceController {
   @UseGuards(PermissionsGuard)
   @Permissions('compliance.manage')
   @ApiOperation({ summary: 'Update a compliance item' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        dueDate: { type: 'string' },
+        status: { type: 'string' },
+        categoryId: { type: 'string' },
+        notes: { type: 'string' },
+        fileUrl: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/compliance',
+        filename: (_req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, uniqueSuffix + extname(file.originalname));
+        },
+      }),
+    }),
+  )
   update(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
     @Body() dto: UpdateComplianceItemDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
+    if (file) dto.fileUrl = `/uploads/compliance/${file.filename}`;
     return this.compliance.update(tenantId, id, dto);
   }
 

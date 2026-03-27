@@ -531,6 +531,7 @@ model CalendarEvent {
   type        String?
   location    String?
   description String?
+  notifyVia   String[] @default([]) @map("notify_via")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -541,12 +542,24 @@ model CalendarEvent {
   @@map("calendar_events")
 }
 
+model DocumentCategory {
+  id String @id @default(uuid())
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  documents Document[]
+
+  @@map("document_categories")
+}
+
 model Document {
   id               String   @id @default(uuid())
   tenantId         String   @map("tenant_id")
   name             String
   documentType     String?  @map("document_type")
-  category         String?
+  categoryId       String?  @map("category_id")
   fileUrl          String?  @map("file_url")
   uploadedByUserId String?  @map("uploaded_by_user_id")
   createdAt        DateTime @default(now()) @map("created_at")
@@ -554,9 +567,10 @@ model Document {
 
   tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   uploadedBy User?  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
-
+  category DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   @@index([tenantId])
   @@index([uploadedByUserId])
+  @@index([categoryId])
   @@map("documents")
 }
 
@@ -568,19 +582,32 @@ enum ComplianceStatus {
   compliant
 }
 
+model ComplianceCategory {
+  id String @id @default(uuid())
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  complianceItems ComplianceItem[]
+
+  @@map("compliance_categories")
+}
+
 model ComplianceItem {
   id        String           @id @default(uuid())
   tenantId  String           @map("tenant_id")
   name      String
   dueDate   DateTime         @map("due_date")
   status    ComplianceStatus @default(pending)
-  category  String?
+  categoryId String?  @map("category_id")
   notes     String?
+  fileUrl   String?  @map("file_url")
   createdAt DateTime         @default(now()) @map("created_at")
   updatedAt DateTime         @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
+  category ComplianceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   @@index([tenantId])
   @@index([tenantId, status])
   @@map("compliance_items")
