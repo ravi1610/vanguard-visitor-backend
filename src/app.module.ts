@@ -21,6 +21,7 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { DocumentCategoryModule } from './modules/document-category/document-category.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
@@ -117,6 +118,7 @@ import configuration from './config/configuration';
     VendorsModule,
     ComplianceModule,
     DocumentsModule,
+    DocumentCategoryModule,
     SpacesModule,
     MaintenanceModule,
     CalendarModule,

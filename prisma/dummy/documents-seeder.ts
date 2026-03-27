@@ -11,13 +11,18 @@ export async function seedDocuments(
 ): Promise<void> {
   const { tenantId, counts, adminUserId } = ctx;
   const count = counts.documents;
+  const categories = await prisma.documentCategory.findMany({
+    where: { name: { in: CATEGORIES as unknown as string[] } },
+    select: { id: true, name: true },
+  });
+  const categoryIdByName = Object.fromEntries(categories.map((c) => [c.name, c.id]));
 
   const data = Array.from({ length: count }, (_, i) => ({
     id: `seed-doc-${i + 1}`,
     tenantId,
     name: `Document ${i + 1}`,
     documentType: at(i, DOC_TYPES),
-    category: at(i, CATEGORIES),
+    categoryId: categoryIdByName[at(i, CATEGORIES)],
     uploadedByUserId: adminUserId,
   }));
 

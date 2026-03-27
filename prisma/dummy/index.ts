@@ -8,6 +8,7 @@ import { seedVehicles } from './vehicles-seeder';
 import { seedProjectsAndTasks } from './projects-tasks-seeder';
 import { seedCalendarEvents } from './calendar-events-seeder';
 import { seedDocuments } from './documents-seeder';
+import { seedDocumentCategories } from './document-categories-seeder';
 import { seedComplianceItems } from './compliance-seeder';
 import { seedVendors } from './vendors-seeder';
 import { seedSpacesAndAssignments } from './spaces-assignments-seeder';
@@ -35,6 +36,7 @@ export async function runDummySeed(
   await seedVehicles(prisma, ctxWithResidents);
   await seedProjectsAndTasks(prisma, ctxWithResidents);
   await seedCalendarEvents(prisma, ctxWithResidents);
+  await seedDocumentCategories(prisma);
   await seedDocuments(prisma, ctxWithResidents);
   await seedComplianceItems(prisma, ctxWithResidents);
   await seedVendors(prisma, ctxWithResidents);
