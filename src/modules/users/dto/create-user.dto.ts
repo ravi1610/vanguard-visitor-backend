@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength, IsArray } from 'class-validator';
 
 const RESIDENT_TYPES = ['president', 'vice_president', 'treasurer', 'owner', 'renter'] as const;
 
@@ -86,4 +86,9 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   leaseEndDate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tenantIds?: string[];
 }

@@ -11,7 +11,11 @@ export class SuperAdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const { user } = context.switchToHttp().getRequest();
     const payload = user as JwtPayload;
-    if (!payload?.isSuperAdmin) {
+    const hasAdminRole = Array.isArray(payload?.roles)
+      ? payload.roles.some((r) => String(r).trim().toLowerCase() === 'admin')
+      : false;
+
+    if (!payload?.isSuperAdmin && !hasAdminRole) {
       throw new ForbiddenException('Superadmin access required');
     }
     return true;

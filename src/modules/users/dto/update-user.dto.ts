@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf, IsArray } from 'class-validator';
 
 const RESIDENT_TYPES = ['president', 'vice_president', 'treasurer', 'owner', 'renter'] as const;
 
@@ -87,4 +87,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   leaseEndDate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tenantIds?: string[];
 }

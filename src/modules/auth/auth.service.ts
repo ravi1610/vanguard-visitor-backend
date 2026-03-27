@@ -168,32 +168,64 @@ export class AuthService implements OnModuleInit {
    * Used to populate the tenant switcher dropdown.
    */
   async getMyTenants(userId: string) {
-    const user = await this.prisma.user.findUnique({
+    const currentUser = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true },
+      select: {
+        email: true,
+        isSuperAdmin: true,
+        userRoles: { select: { role: { select: { key: true } } } },
+      },
     });
-    if (!user) throw new UnauthorizedException('User not found');
+    if (!currentUser) throw new UnauthorizedException('User not found');
 
-    // Find all active user records with the same email across all active tenants
+    // Super admins and tenant_owner role holders see all active tenants
+    const hasTenantOwnerRole = (currentUser.userRoles ?? []).some((ur) => ur.role?.key === 'tenant_owner');
+    if (currentUser.isSuperAdmin || hasTenantOwnerRole) {
+      const all = await this.prisma.tenant.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, slug: true },
+        orderBy: { name: 'asc' },
+      });
+      return all.map((t) => ({ id: t.id, name: t.name, slug: t.slug }));
+    }
+
+    // Tenants where this user has a dedicated user record (same email across tenants)
     const userRecords = await this.prisma.user.findMany({
       where: {
-        email: user.email,
+        email: currentUser.email,
         isActive: true,
         tenant: { isActive: true },
       },
       select: {
         id: true,
-        tenantId: true,
         tenant: { select: { id: true, name: true, slug: true } },
       },
-      orderBy: { tenant: { name: 'asc' } },
     });
 
-    return userRecords.map((r) => ({
-      id: r.tenant.id,
-      name: r.tenant.name,
-      slug: r.tenant.slug,
-    }));
+    // Tenants explicitly assigned via user_tenants mapping. Include mapping rows
+    // for any user account that shares the same email so assigned tenants are
+    // visible regardless of which tenant-specific user record the user is
+    // currently using to authenticate.
+    const emailUserIds = userRecords.map((r) => r.id);
+    if (!emailUserIds.includes(userId)) emailUserIds.push(userId);
+    const assigned = await this.prisma.userTenant.findMany({
+      where: { userId: { in: emailUserIds } },
+      include: { tenant: { select: { id: true, name: true, slug: true, isActive: true } } },
+    });
+
+    const combined = [
+      ...userRecords.map((r) => r.tenant),
+      ...assigned.filter((a) => a.tenant?.isActive).map((a) => a.tenant),
+    ];
+
+    // Deduplicate by tenant id and sort by name
+    const map = new Map<string, { id: string; name: string; slug: string }>();
+    for (const t of combined) {
+      if (!t) continue;
+      map.set(t.id, { id: t.id, name: t.name, slug: t.slug });
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**

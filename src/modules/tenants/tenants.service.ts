@@ -74,11 +74,10 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
   // =========================================================
 
   // ✅ FIX: Find actual global super admin
+if (!isSuperAdmin) {
   const superAdmin = await this.prisma.user.findFirst({
-    where: {
-      isSuperAdmin: true,
-    },
-  });
+    where: { isSuperAdmin: true },
+  })
 
   if (superAdmin) {
     const existing = await this.prisma.user.findFirst({
@@ -122,6 +121,7 @@ async create(dto: CreateTenantDto, creatorUserId: string) {
       });
     }
   }
+}
 
   // =========================================================
   // 🔥 STEP 2: ADD CREATOR (ADMIN OR OWNER)
