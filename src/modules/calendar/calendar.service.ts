@@ -32,6 +32,7 @@ export class CalendarService {
         type: dto.type,
         location: dto.location,
         description: dto.description,
+        notifyVia: dto.notifyVia ?? [],
       },
     });
   }
@@ -88,6 +89,7 @@ export class CalendarService {
         ...(dto.type !== undefined && { type: dto.type }),
         ...(dto.location !== undefined && { location: dto.location }),
         ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.notifyVia !== undefined && { notifyVia: dto.notifyVia }),
       },
     });
   }

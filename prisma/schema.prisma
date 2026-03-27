@@ -531,6 +531,7 @@ model CalendarEvent {
   type        String?
   location    String?
   description String?
+  notifyVia   String[] @default([]) @map("notify_via")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

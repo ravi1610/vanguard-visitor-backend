@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateCalendarEventDto {
   @IsString()
@@ -22,4 +22,9 @@ export class CreateCalendarEventDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsIn(['app', 'sms', 'email'], { each: true })
+  notifyVia?: string[];
 }
